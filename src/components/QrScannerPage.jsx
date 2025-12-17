@@ -1,21 +1,30 @@
-import { useEffect, useRef, useState } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { useEffect, useRef, useState, useCallback } from 'react';
+import QrScanner from 'qr-scanner';
 
-const QRCodeScanner = () => {
+const QrScannerPage = () => {
   const [scanResult, setScanResult] = useState(null);
   const [isScanning, setIsScanning] = useState(false);
   const [error, setError] = useState(null);
-  const [scanMode, setScanMode] = useState('live'); // 'live' or 'capture'
+  const [scanMode, setScanMode] = useState('live');
   const [capturedImage, setCapturedImage] = useState(null);
+  const videoRef = useRef(null);
   const scannerRef = useRef(null);
-  const html5QrCodeRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  const stopScanner = useCallback(() => {
+    if (scannerRef.current) {
+      scannerRef.current.stop();
+      scannerRef.current.destroy();
+      scannerRef.current = null;
+    }
+    setIsScanning(false);
+  }, []);
 
   useEffect(() => {
     return () => {
       stopScanner();
     };
-  }, []);
+  }, [stopScanner]);
 
   const startScanner = async () => {
     try {
@@ -23,30 +32,28 @@ const QRCodeScanner = () => {
       setScanResult(null);
       setCapturedImage(null);
 
-      if (!html5QrCodeRef.current) {
-        html5QrCodeRef.current = new Html5Qrcode('qr-reader');
+      if (!videoRef.current) {
+        setError('Video element not found');
+        return;
       }
 
-      const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
-        aspectRatio: 1.0,
-      };
-
-      await html5QrCodeRef.current.start(
-        { facingMode: 'environment' },
-        config,
-        (decodedText, decodedResult) => {
-          setScanResult(decodedText);
+      scannerRef.current = new QrScanner(
+        videoRef.current,
+        (result) => {
+          setScanResult(result.data);
           if (scanMode === 'live') {
             stopScanner();
           }
         },
-        (errorMessage) => {
-          // Ignore scan errors - they happen frequently when no QR code is visible
+        {
+          returnDetailedScanResult: true,
+          highlightScanRegion: true,
+          highlightCodeOutline: true,
+          preferredCamera: 'environment',
         }
       );
 
+      await scannerRef.current.start();
       setIsScanning(true);
     } catch (err) {
       setError(`Failed to start scanner: ${err.message}`);
@@ -54,55 +61,35 @@ const QRCodeScanner = () => {
     }
   };
 
-  const stopScanner = async () => {
-    if (html5QrCodeRef.current && isScanning) {
-      try {
-        await html5QrCodeRef.current.stop();
-        setIsScanning(false);
-      } catch (err) {
-        console.error('Error stopping scanner:', err);
-      }
-    }
-  };
-
   const captureAndDecode = async () => {
-    if (!html5QrCodeRef.current || !isScanning) {
-      setError('Please start the camera first');
+    if (!videoRef.current) {
+      setError('Video not ready');
       return;
     }
 
     try {
-      // Get the video element
-      const videoElement = document.querySelector('#qr-reader video');
-      if (!videoElement) {
-        setError('Video element not found');
-        return;
-      }
-
-      // Create a canvas to capture the frame
+      // Create canvas to capture frame
       const canvas = document.createElement('canvas');
-      canvas.width = videoElement.videoWidth;
-      canvas.height = videoElement.videoHeight;
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
       const ctx = canvas.getContext('2d');
-      ctx.drawImage(videoElement, 0, 0);
+      ctx.drawImage(videoRef.current, 0, 0);
 
-      // Convert to blob and decode
-      canvas.toBlob(async (blob) => {
-        if (blob) {
-          const imageUrl = URL.createObjectURL(blob);
-          setCapturedImage(imageUrl);
+      // Show captured image
+      const imageUrl = canvas.toDataURL('image/png');
+      setCapturedImage(imageUrl);
 
-          try {
-            const file = new File([blob], 'capture.png', { type: 'image/png' });
-            const result = await html5QrCodeRef.current.scanFile(file, true);
-            setScanResult(result);
-            setError(null);
-          } catch (err) {
-            setError('No QR code found in the captured image');
-            setScanResult(null);
-          }
-        }
-      }, 'image/png');
+      // Convert to blob for scanning
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+
+      try {
+        const result = await QrScanner.scanImage(blob, { returnDetailedScanResult: true });
+        setScanResult(result.data);
+        setError(null);
+      } catch (err) {
+        setError('No QR code found in the captured image');
+        setScanResult(null);
+      }
     } catch (err) {
       setError(`Capture failed: ${err.message}`);
     }
@@ -116,19 +103,17 @@ const QRCodeScanner = () => {
       setError(null);
       setScanResult(null);
 
-      // Show preview
       const imageUrl = URL.createObjectURL(file);
       setCapturedImage(imageUrl);
 
-      if (!html5QrCodeRef.current) {
-        html5QrCodeRef.current = new Html5Qrcode('qr-reader-hidden');
+      try {
+        const result = await QrScanner.scanImage(file, { returnDetailedScanResult: true });
+        setScanResult(result.data);
+      } catch (err) {
+        setError('No QR code found in the uploaded image');
       }
-
-      const result = await html5QrCodeRef.current.scanFile(file, true);
-      setScanResult(result);
     } catch (err) {
-      setError('No QR code found in the uploaded image');
-      setScanResult(null);
+      setError(`Upload failed: ${err.message}`);
     }
   };
 
@@ -143,7 +128,7 @@ const QRCodeScanner = () => {
 
   return (
     <div className="qr-scanner-container">
-      <h1>QR Code Scanner</h1>
+      <h1>QR Scanner</h1>
 
       <div className="mode-selector">
         <button
@@ -169,10 +154,24 @@ const QRCodeScanner = () => {
       </div>
 
       <div className="scanner-area">
-        <div id="qr-reader" ref={scannerRef}></div>
-        <div id="qr-reader-hidden" style={{ display: 'none' }}></div>
+        <video
+          ref={videoRef}
+          style={{
+            width: '100%',
+            display: isScanning ? 'block' : 'none',
+            borderRadius: '8px'
+          }}
+          playsInline
+          muted
+        />
 
-        {capturedImage && (
+        {!isScanning && !capturedImage && (
+          <div className="placeholder">
+            <p>Camera preview will appear here</p>
+          </div>
+        )}
+
+        {capturedImage && !isScanning && (
           <div className="captured-image">
             <h3>Captured Image:</h3>
             <img src={capturedImage} alt="Captured" />
@@ -265,4 +264,4 @@ const QRCodeScanner = () => {
   );
 };
 
-export default QRCodeScanner;
+export default QrScannerPage;

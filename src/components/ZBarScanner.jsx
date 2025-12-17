@@ -259,35 +259,32 @@ const ZBarScanner = () => {
           </>
         ) : (
           <>
-            <div className="capture-controls">
-              {!isScanning ? (
+            {!isScanning ? (
+              <div className="capture-controls">
                 <button className="control-btn start" onClick={startCamera}>
                   Open Camera
                 </button>
-              ) : (
-                <>
-                  <button className="control-btn capture" onClick={captureAndDecode}>
-                    Capture & Decode
-                  </button>
-                  <button className="control-btn stop" onClick={stopCamera}>
-                    Close Camera
-                  </button>
-                </>
-              )}
-            </div>
-            <div className="upload-section">
-              <span className="divider">or</span>
-              <label className="upload-btn">
-                Upload QR Image
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileUpload}
-                  ref={fileInputRef}
-                  style={{ display: 'none' }}
-                />
-              </label>
-            </div>
+                <label className="control-btn upload">
+                  Upload Image
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={handleFileUpload}
+                    ref={fileInputRef}
+                    style={{ display: 'none' }}
+                  />
+                </label>
+              </div>
+            ) : (
+              <div className="capture-controls">
+                <button className="control-btn capture" onClick={captureAndDecode}>
+                  Capture & Decode
+                </button>
+                <button className="control-btn stop" onClick={stopCamera}>
+                  Close Camera
+                </button>
+              </div>
+            )}
           </>
         )}
 

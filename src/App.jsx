@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
 import QRCodeScanner from './components/QRCodeScanner'
 import ZBarScanner from './components/ZBarScanner'
+import QrScannerPage from './components/QrScannerPage'
 import './App.css'
 
 function Navigation() {
@@ -20,6 +21,12 @@ function Navigation() {
       >
         ZBar WASM
       </Link>
+      <Link
+        to="/qr-scanner"
+        className={`nav-link ${location.pathname === '/qr-scanner' ? 'active' : ''}`}
+      >
+        QR Scanner
+      </Link>
     </nav>
   )
 }
@@ -32,6 +39,7 @@ function App() {
         <Routes>
           <Route path="/" element={<QRCodeScanner />} />
           <Route path="/zbar" element={<ZBarScanner />} />
+          <Route path="/qr-scanner" element={<QrScannerPage />} />
         </Routes>
       </div>
     </BrowserRouter>

@@ -31,9 +31,8 @@ body {
   min-width: 320px;
   min-height: 100vh;
   min-height: -webkit-fill-available;
-  padding-top: 20px;
-  padding-top: env(safe-area-inset-top, 20px);
-  padding-bottom: env(safe-area-inset-bottom, 0);
+  padding-top: env(safe-area-inset-top, 8px);
+  padding-bottom: env(safe-area-inset-bottom, 8px);
   -webkit-tap-highlight-color: transparent;
 }
 
