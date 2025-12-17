@@ -22,7 +22,7 @@ const ZXingScannerPage = () => {
   const streamRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Stop all media tracks - important for releasing camera
+  // Stop all media tracks
   const stopAllTracks = useCallback(() => {
     if (controlsRef.current) {
       controlsRef.current.stop();
@@ -52,7 +52,6 @@ const ZXingScannerPage = () => {
       );
     }
 
-    // Always try environment facing mode with progressive fallback
     constraintsList.push(
       { video: { facingMode: { exact: 'environment' } } },
       { video: { facingMode: 'environment' } },
@@ -79,7 +78,6 @@ const ZXingScannerPage = () => {
       throw lastError || new Error('Could not access any camera');
     }
 
-    // Verify what camera we got
     const track = stream.getVideoTracks()[0];
     if (track && typeof track.getSettings === 'function') {
       const settings = track.getSettings();
@@ -91,12 +89,11 @@ const ZXingScannerPage = () => {
     return stream;
   }, [stopAllTracks]);
 
-  // Load available cameras using ZXing's method
+  // Load available cameras
   const loadCameras = useCallback(async () => {
     try {
       setCamerasLoading(true);
 
-      // Request permission first
       try {
         const initialStream = await navigator.mediaDevices.getUserMedia({
           video: { facingMode: 'environment' }
@@ -107,10 +104,8 @@ const ZXingScannerPage = () => {
         fallbackStream.getTracks().forEach(t => t.stop());
       }
 
-      // Use ZXing's built-in method to list cameras
       const availableCameras = await BrowserQRCodeReader.listVideoInputDevices();
 
-      // Filter out front-facing cameras
       const backCameras = availableCameras.filter(camera => {
         const label = camera.label.toLowerCase();
         const isFrontCamera =
@@ -121,7 +116,6 @@ const ZXingScannerPage = () => {
         return !isFrontCamera;
       });
 
-      // Sort to prefer main camera (deprioritize wide/telephoto/macro)
       const sortedCameras = [...backCameras].sort((a, b) => {
         const labelA = a.label.toLowerCase();
         const labelB = b.label.toLowerCase();
@@ -151,7 +145,6 @@ const ZXingScannerPage = () => {
       });
 
       const camerasToUse = sortedCameras.length > 0 ? sortedCameras : availableCameras;
-
       setCameras(camerasToUse);
       setCamerasLoading(false);
 
@@ -163,7 +156,6 @@ const ZXingScannerPage = () => {
     }
   }, []);
 
-  // Initialize ZXing reader and load cameras on mount
   useEffect(() => {
     codeReaderRef.current = new BrowserQRCodeReader();
     loadCameras();
@@ -177,7 +169,7 @@ const ZXingScannerPage = () => {
     };
   }, [loadCameras, stopAllTracks]);
 
-  // Initialize camera features (zoom, autofocus) after stream is ready
+  // Initialize camera features - zoom starts at 1.0
   const initializeCameraFeatures = useCallback(async () => {
     if (!videoRef.current?.srcObject) return;
 
@@ -191,7 +183,7 @@ const ZXingScannerPage = () => {
     const capabilities = track.getCapabilities();
     console.log('[ZXing] Camera capabilities:', capabilities);
 
-    // Setup continuous autofocus if supported
+    // Setup continuous autofocus
     if (capabilities?.focusMode) {
       console.log('[ZXing] Available focus modes:', capabilities.focusMode);
 
@@ -207,20 +199,12 @@ const ZXingScannerPage = () => {
       }
     }
 
-    // Setup zoom if supported
+    // Setup zoom - start at 1.0
     if (capabilities?.zoom) {
       setZoomSupported(true);
       setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
-
-      const defaultZoom = Math.min(2, capabilities.zoom.max);
-      setZoomLevel(defaultZoom);
-
-      try {
-        await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
-        console.log('[ZXing] Default zoom set to:', defaultZoom);
-      } catch (err) {
-        console.log('[ZXing] Failed to apply default zoom:', err);
-      }
+      setZoomLevel(1);
+      console.log('[ZXing] Zoom supported, starting at 1.0x');
     }
   }, []);
 
@@ -243,23 +227,18 @@ const ZXingScannerPage = () => {
         return;
       }
 
-      // STEP 1: Manually get camera stream with exact environment constraint
       const stream = await getCameraStream(selectedCamera);
-
-      // STEP 2: Attach stream to video element
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
 
-      // STEP 3: Start ZXing decoding from the video element
       controlsRef.current = await codeReaderRef.current.decodeFromVideoDevice(
-        undefined, // Don't let ZXing handle camera - we already have stream
+        undefined,
         videoRef.current,
         (result, error) => {
           if (result) {
             const text = result.getText();
             setScanResult(text);
 
-            // Capture frame
             if (videoRef.current) {
               const canvas = document.createElement('canvas');
               canvas.width = videoRef.current.videoWidth;
@@ -273,7 +252,6 @@ const ZXingScannerPage = () => {
               stopScanner();
             }
           }
-          // Ignore NotFoundException - happens when no QR code visible
           if (error && !(error instanceof NotFoundException)) {
             console.error('[ZXing] Scan error:', error);
           }
@@ -413,11 +391,90 @@ const ZXingScannerPage = () => {
   };
 
   const getCameraStatusLabel = () => {
-    if (currentFacingMode === 'environment') return '(Back Camera)';
-    if (currentFacingMode === 'user') return '(Front Camera - Wrong!)';
-    return '';
+    if (currentFacingMode === 'environment') return 'Back Camera';
+    if (currentFacingMode === 'user') return 'Front Camera!';
+    return 'Unknown';
   };
 
+  // Fullscreen scanner view when scanning
+  if (isScanning) {
+    return (
+      <div className="zxing-fullscreen">
+        {/* Fullscreen video */}
+        <video
+          ref={videoRef}
+          className="zxing-video"
+          playsInline
+          muted
+        />
+
+        {/* Top overlay controls */}
+        <div className="zxing-top-overlay">
+          <div className="zxing-header">
+            <span className="zxing-title">ZXing Scanner</span>
+            <span className={`zxing-camera-badge ${currentFacingMode === 'user' ? 'wrong' : ''}`}>
+              {getCameraStatusLabel()}
+            </span>
+          </div>
+
+          {/* Camera selector */}
+          <select
+            value={selectedCamera}
+            onChange={(e) => handleCameraChange(e.target.value)}
+            className="zxing-camera-select"
+          >
+            <option value="environment">Back Camera (Auto)</option>
+            {cameras.map((camera, index) => (
+              <option key={camera.deviceId} value={camera.deviceId}>
+                {camera.label || `Camera ${index + 1}`}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Center scan frame */}
+        <div className="zxing-scan-frame">
+          <div className="zxing-corner tl"></div>
+          <div className="zxing-corner tr"></div>
+          <div className="zxing-corner bl"></div>
+          <div className="zxing-corner br"></div>
+        </div>
+
+        {/* Bottom overlay controls */}
+        <div className="zxing-bottom-overlay">
+          {/* Zoom control */}
+          {zoomSupported && (
+            <div className="zxing-zoom-control">
+              <span className="zxing-zoom-label">{zoomLevel.toFixed(1)}x</span>
+              <input
+                type="range"
+                min={zoomRange.min}
+                max={zoomRange.max}
+                step="0.1"
+                value={zoomLevel}
+                onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
+                className="zxing-zoom-slider"
+              />
+            </div>
+          )}
+
+          {/* Action buttons */}
+          <div className="zxing-actions">
+            {scanMode === 'capture' && (
+              <button className="zxing-btn capture" onClick={captureAndDecode}>
+                Capture
+              </button>
+            )}
+            <button className="zxing-btn stop" onClick={stopScanner}>
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Normal view when not scanning
   return (
     <div className="qr-scanner-container">
       <h1>ZXing Scanner</h1>
@@ -427,7 +484,6 @@ const ZXingScannerPage = () => {
           className={`mode-btn ${scanMode === 'live' ? 'active' : ''}`}
           onClick={() => {
             setScanMode('live');
-            stopScanner();
             resetScanner();
           }}
         >
@@ -437,7 +493,6 @@ const ZXingScannerPage = () => {
           className={`mode-btn ${scanMode === 'capture' ? 'active' : ''}`}
           onClick={() => {
             setScanMode('capture');
-            stopScanner();
             resetScanner();
           }}
         >
@@ -451,7 +506,7 @@ const ZXingScannerPage = () => {
         ) : (
           <select
             value={selectedCamera}
-            onChange={(e) => handleCameraChange(e.target.value)}
+            onChange={(e) => setSelectedCamera(e.target.value)}
             className="camera-select"
           >
             <option value="environment">Back Camera (Auto)</option>
@@ -462,107 +517,45 @@ const ZXingScannerPage = () => {
             ))}
           </select>
         )}
-        {isScanning && currentFacingMode && (
-          <span className={`camera-status ${currentFacingMode === 'user' ? 'wrong' : 'correct'}`}>
-            {getCameraStatusLabel()}
-          </span>
-        )}
       </div>
 
+      {/* Hidden video element for non-scanning state */}
+      <video ref={videoRef} style={{ display: 'none' }} playsInline muted />
+
       <div className="scanner-area">
-        <div
-          className="video-container"
-          style={{
-            width: '100%',
-            height: '100%',
-            display: isScanning ? 'block' : 'none',
-            position: 'relative'
-          }}
-        >
-          <video
-            ref={videoRef}
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-              borderRadius: '8px'
-            }}
-            playsInline
-            muted
-          />
-        </div>
-
-        {!isScanning && !capturedImage && (
-          <div className="placeholder">
-            <p>Camera preview will appear here</p>
-          </div>
-        )}
-
-        {capturedImage && !isScanning && (
+        {capturedImage ? (
           <div className="captured-image">
             <h3>Captured Image:</h3>
             <img src={capturedImage} alt="Captured" />
           </div>
+        ) : (
+          <div className="placeholder">
+            <p>Camera preview will appear here</p>
+          </div>
         )}
       </div>
 
-      {isScanning && zoomSupported && (
-        <div className="zoom-control">
-          <span className="zoom-label">Zoom: {zoomLevel.toFixed(1)}x</span>
-          <input
-            type="range"
-            min={zoomRange.min}
-            max={zoomRange.max}
-            step="0.1"
-            value={zoomLevel}
-            onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
-            className="zoom-slider"
-          />
-        </div>
-      )}
-
       <div className="controls">
         {scanMode === 'live' ? (
-          <>
-            {!isScanning ? (
-              <button className="control-btn start" onClick={startScanner}>
-                Start Live Scanning
-              </button>
-            ) : (
-              <button className="control-btn stop" onClick={stopScanner}>
-                Stop Scanning
-              </button>
-            )}
-          </>
+          <button className="control-btn start" onClick={startScanner}>
+            Start Live Scanning
+          </button>
         ) : (
-          <>
-            {!isScanning ? (
-              <div className="capture-controls">
-                <button className="control-btn start" onClick={startScanner}>
-                  Open Camera
-                </button>
-                <label className="control-btn upload">
-                  Upload Image
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    ref={fileInputRef}
-                    style={{ display: 'none' }}
-                  />
-                </label>
-              </div>
-            ) : (
-              <div className="capture-controls">
-                <button className="control-btn capture" onClick={captureAndDecode}>
-                  Capture & Decode
-                </button>
-                <button className="control-btn stop" onClick={stopScanner}>
-                  Close Camera
-                </button>
-              </div>
-            )}
-          </>
+          <div className="capture-controls">
+            <button className="control-btn start" onClick={startScanner}>
+              Open Camera
+            </button>
+            <label className="control-btn upload">
+              Upload Image
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleFileUpload}
+                ref={fileInputRef}
+                style={{ display: 'none' }}
+              />
+            </label>
+          </div>
         )}
 
         {(scanResult || error || capturedImage) && (
