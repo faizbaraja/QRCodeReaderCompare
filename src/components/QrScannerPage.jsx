@@ -12,30 +12,105 @@ const QrScannerPage = () => {
   const [zoomRange, setZoomRange] = useState({ min: 1, max: 1 });
   const [cameras, setCameras] = useState([]);
   const [selectedCamera, setSelectedCamera] = useState('');
+  const [camerasLoading, setCamerasLoading] = useState(true);
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Get available cameras on mount
-  useEffect(() => {
-    const getCameras = async () => {
-      try {
-        await navigator.mediaDevices.getUserMedia({ video: true });
-        const devices = await navigator.mediaDevices.enumerateDevices();
-        const videoDevices = devices.filter(device => device.kind === 'videoinput');
-        setCameras(videoDevices);
-        const backCamera = videoDevices.find(d =>
-          d.label.toLowerCase().includes('back') ||
-          d.label.toLowerCase().includes('rear') ||
-          d.label.toLowerCase().includes('environment')
-        );
-        setSelectedCamera(backCamera?.deviceId || videoDevices[0]?.deviceId || '');
-      } catch (err) {
-        console.log('Could not enumerate cameras:', err);
+  // Get available cameras with proper facingMode detection
+  const getCamerasWithFacingMode = useCallback(async () => {
+    try {
+      setCamerasLoading(true);
+
+      // Request permission first
+      await navigator.mediaDevices.getUserMedia({ video: true });
+
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+      // Get actual facingMode for each camera
+      const camerasWithFacing = await Promise.all(
+        videoDevices.map(async (device) => {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: { deviceId: { exact: device.deviceId } }
+            });
+            const track = stream.getVideoTracks()[0];
+            let facingMode = 'unknown';
+
+            if (track && typeof track.getCapabilities === 'function') {
+              const capabilities = track.getCapabilities();
+              // facingMode can be an array or string
+              if (capabilities?.facingMode) {
+                facingMode = Array.isArray(capabilities.facingMode)
+                  ? capabilities.facingMode[0]
+                  : capabilities.facingMode;
+              }
+            }
+
+            // Stop the temporary stream
+            track.stop();
+            stream.getTracks().forEach(t => t.stop());
+
+            return {
+              deviceId: device.deviceId,
+              label: device.label || `Camera ${device.deviceId.slice(0, 4)}`,
+              facingMode
+            };
+          } catch (err) {
+            console.log(`Could not get capabilities for camera ${device.deviceId}:`, err);
+            return {
+              deviceId: device.deviceId,
+              label: device.label || `Camera ${device.deviceId.slice(0, 4)}`,
+              facingMode: 'unknown'
+            };
+          }
+        })
+      );
+
+      // Filter only back cameras (environment) or unknown (for desktop/fallback)
+      // Exclude front cameras (user)
+      const backCameras = camerasWithFacing.filter(
+        c => c.facingMode === 'environment' || c.facingMode === 'unknown'
+      );
+
+      // If no back cameras found, use all cameras as fallback
+      const availableCameras = backCameras.length > 0 ? backCameras : camerasWithFacing;
+
+      setCameras(availableCameras);
+
+      // Select the first back camera as default (best for QR scanning)
+      const defaultCamera = availableCameras.find(c => c.facingMode === 'environment')
+        || availableCameras[0];
+
+      if (defaultCamera && !selectedCamera) {
+        setSelectedCamera(defaultCamera.deviceId);
       }
+
+      setCamerasLoading(false);
+      return availableCameras;
+    } catch (err) {
+      console.log('Could not enumerate cameras:', err);
+      setCamerasLoading(false);
+      return [];
+    }
+  }, [selectedCamera]);
+
+  // Get cameras on mount
+  useEffect(() => {
+    getCamerasWithFacingMode();
+
+    // Listen for camera changes (device connected/disconnected)
+    const handleDeviceChange = () => {
+      getCamerasWithFacingMode();
     };
-    getCameras();
-  }, []);
+
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+
+    return () => {
+      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+    };
+  }, [getCamerasWithFacingMode]);
 
   const stopScanner = useCallback(() => {
     if (scannerRef.current) {
@@ -53,6 +128,39 @@ const QrScannerPage = () => {
       stopScanner();
     };
   }, [stopScanner]);
+
+  // Initialize zoom capabilities when video stream is ready
+  const initializeZoom = useCallback(async () => {
+    if (!videoRef.current?.srcObject) return;
+
+    const stream = videoRef.current.srcObject;
+    const track = stream.getVideoTracks()[0];
+
+    if (!track || typeof track.getCapabilities !== 'function') {
+      console.log('Zoom not supported: getCapabilities not available');
+      return;
+    }
+
+    const capabilities = track.getCapabilities();
+
+    if (capabilities?.zoom) {
+      setZoomSupported(true);
+      setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
+
+      // Set default zoom to 2x (or max if less than 2)
+      const defaultZoom = Math.min(2, capabilities.zoom.max);
+      setZoomLevel(defaultZoom);
+
+      try {
+        await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
+      } catch (err) {
+        console.log('Failed to apply default zoom:', err);
+      }
+    } else {
+      console.log('Zoom not supported on this camera');
+      setZoomSupported(false);
+    }
+  }, []);
 
   const startScanner = async () => {
     try {
@@ -98,31 +206,21 @@ const QrScannerPage = () => {
         scannerOptions
       );
 
+      // Set up event listener for when video metadata is loaded
+      const handleLoadedMetadata = () => {
+        // Small delay to ensure stream is fully ready
+        setTimeout(initializeZoom, 100);
+      };
+
+      videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
+
       await scannerRef.current.start();
       setIsScanning(true);
 
-      // Check zoom capability after a short delay
-      setTimeout(async () => {
-        if (videoRef.current && videoRef.current.srcObject) {
-          const stream = videoRef.current.srcObject;
-          const track = stream.getVideoTracks()[0];
-          if (track && typeof track.getCapabilities === 'function') {
-            const capabilities = track.getCapabilities();
-            if (capabilities && capabilities.zoom) {
-              setZoomSupported(true);
-              setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
-              // Set default zoom to 2x (or max if less than 2)
-              const defaultZoom = Math.min(2, capabilities.zoom.max);
-              setZoomLevel(defaultZoom);
-              try {
-                await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
-              } catch (err) {
-                console.log('Failed to apply default zoom:', err);
-              }
-            }
-          }
-        }
-      }, 500);
+      // Also try to initialize zoom after start (fallback if event already fired)
+      if (videoRef.current.readyState >= 1) {
+        setTimeout(initializeZoom, 100);
+      }
     } catch (err) {
       setError(`Failed to start scanner: ${err.message}`);
       setIsScanning(false);
@@ -236,8 +334,14 @@ const QrScannerPage = () => {
         </button>
       </div>
 
-      {cameras.length > 1 && (
-        <div className="camera-selector">
+      <div className="camera-selector">
+        {camerasLoading ? (
+          <span className="camera-loading">Detecting cameras...</span>
+        ) : cameras.length === 0 ? (
+          <span className="camera-error">No back cameras found</span>
+        ) : cameras.length === 1 ? (
+          <span className="camera-single">{cameras[0].label}</span>
+        ) : (
           <select
             value={selectedCamera}
             onChange={(e) => {
@@ -254,8 +358,8 @@ const QrScannerPage = () => {
               </option>
             ))}
           </select>
-        </div>
-      )}
+        )}
+      </div>
 
       <div className="scanner-area">
         <div
