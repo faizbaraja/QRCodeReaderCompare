@@ -64,17 +64,24 @@ const QRCodeScanner = () => {
       setIsScanning(true);
 
       // Check zoom capability after a short delay
-      setTimeout(() => {
+      setTimeout(async () => {
         const videoElement = document.querySelector('#qr-reader video');
         if (videoElement && videoElement.srcObject) {
           const stream = videoElement.srcObject;
           const track = stream.getVideoTracks()[0];
-          if (track) {
+          if (track && typeof track.getCapabilities === 'function') {
             const capabilities = track.getCapabilities();
-            if (capabilities.zoom) {
+            if (capabilities && capabilities.zoom) {
               setZoomSupported(true);
               setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
-              setZoomLevel(capabilities.zoom.min);
+              // Set default zoom to 2x (or max if less than 2)
+              const defaultZoom = Math.min(2, capabilities.zoom.max);
+              setZoomLevel(defaultZoom);
+              try {
+                await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
+              } catch (err) {
+                console.log('Failed to apply default zoom:', err);
+              }
             }
           }
         }
