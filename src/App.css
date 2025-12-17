@@ -133,6 +133,27 @@
   width: 100%;
   max-width: 300px;
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+}
+
+.camera-status {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.camera-status.correct {
+  color: #22c55e;
+  background: rgba(34, 197, 94, 0.1);
+}
+
+.camera-status.wrong {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
+  font-weight: bold;
 }
 
 .camera-select {

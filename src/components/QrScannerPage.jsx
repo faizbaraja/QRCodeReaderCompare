@@ -11,143 +11,94 @@ const QrScannerPage = () => {
   const [zoomSupported, setZoomSupported] = useState(false);
   const [zoomRange, setZoomRange] = useState({ min: 1, max: 1 });
   const [cameras, setCameras] = useState([]);
-  const [selectedCamera, setSelectedCamera] = useState('');
+  const [selectedCamera, setSelectedCamera] = useState('environment');
   const [camerasLoading, setCamerasLoading] = useState(true);
+  const [currentFacingMode, setCurrentFacingMode] = useState(null);
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
   const fileInputRef = useRef(null);
 
-  // Get available cameras with proper facingMode detection
-  const getCamerasWithFacingMode = useCallback(async () => {
+  // Use qr-scanner's built-in listCameras method - much more reliable
+  const loadCameras = useCallback(async () => {
     try {
       setCamerasLoading(true);
 
-      // Request permission with environment facing mode first (back camera)
-      // This ensures we get proper access to back cameras on Android
-      try {
-        const initialStream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' }
-        });
-        initialStream.getTracks().forEach(t => t.stop());
-      } catch {
-        // Fallback to any camera if environment not available
-        const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
-        fallbackStream.getTracks().forEach(t => t.stop());
-      }
+      // Use qr-scanner's built-in method to list cameras
+      // This handles permission request internally
+      const availableCameras = await QrScanner.listCameras(true);
 
-      const devices = await navigator.mediaDevices.enumerateDevices();
-      const videoDevices = devices.filter(device => device.kind === 'videoinput');
+      // Filter to only show back cameras based on label
+      // The library returns cameras with proper labels after permission
+      const backCameras = availableCameras.filter(camera => {
+        const label = camera.label.toLowerCase();
+        // Exclude cameras that are clearly front-facing
+        const isFrontCamera =
+          label.includes('front') ||
+          label.includes('user') ||
+          label.includes('face') ||
+          label.includes('selfie');
+        return !isFrontCamera;
+      });
 
-      // Get actual facingMode for each camera using getSettings()
-      // getSettings() is more reliable than getCapabilities() on Android Chrome
-      const camerasWithFacing = await Promise.all(
-        videoDevices.map(async (device) => {
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-              video: { deviceId: { exact: device.deviceId } }
-            });
-            const track = stream.getVideoTracks()[0];
-            let facingMode = 'unknown';
+      // Sort cameras to put the best QR scanning camera first
+      // Priority: main camera > others (exclude wide/ultra/telephoto/macro)
+      const sortedBackCameras = [...backCameras].sort((a, b) => {
+        const labelA = a.label.toLowerCase();
+        const labelB = b.label.toLowerCase();
 
-            if (track) {
-              // Try getSettings() first - more reliable for current state
-              if (typeof track.getSettings === 'function') {
-                const settings = track.getSettings();
-                if (settings?.facingMode) {
-                  facingMode = settings.facingMode;
-                }
-              }
+        // Cameras to deprioritize for QR scanning
+        const isSpecialCamera = (label) =>
+          label.includes('wide') ||
+          label.includes('ultra') ||
+          label.includes('telephoto') ||
+          label.includes('tele') ||
+          label.includes('macro') ||
+          label.includes('depth') ||
+          label.includes('zoom');
 
-              // Fallback to getCapabilities() if getSettings didn't work
-              if (facingMode === 'unknown' && typeof track.getCapabilities === 'function') {
-                const capabilities = track.getCapabilities();
-                if (capabilities?.facingMode) {
-                  facingMode = Array.isArray(capabilities.facingMode)
-                    ? capabilities.facingMode[0]
-                    : capabilities.facingMode;
-                }
-              }
+        const aIsSpecial = isSpecialCamera(labelA);
+        const bIsSpecial = isSpecialCamera(labelB);
 
-              // Final fallback: check label for hints
-              if (facingMode === 'unknown') {
-                const label = device.label.toLowerCase();
-                if (label.includes('back') || label.includes('rear') || label.includes('environment')) {
-                  facingMode = 'environment';
-                } else if (label.includes('front') || label.includes('user') || label.includes('face')) {
-                  facingMode = 'user';
-                }
-              }
-            }
+        // Prefer non-special cameras (main camera)
+        if (aIsSpecial && !bIsSpecial) return 1;
+        if (!aIsSpecial && bIsSpecial) return -1;
 
-            // Stop the temporary stream
-            track.stop();
-            stream.getTracks().forEach(t => t.stop());
+        // If both are same type, prefer ones with "main" or "back" in name
+        const aIsMain = labelA.includes('main') || labelA.includes('back 0') || labelA.includes('rear 0');
+        const bIsMain = labelB.includes('main') || labelB.includes('back 0') || labelB.includes('rear 0');
 
-            return {
-              deviceId: device.deviceId,
-              label: device.label || `Camera ${device.deviceId.slice(0, 4)}`,
-              facingMode
-            };
-          } catch (err) {
-            console.log(`Could not get capabilities for camera ${device.deviceId}:`, err);
-            return {
-              deviceId: device.deviceId,
-              label: device.label || `Camera ${device.deviceId.slice(0, 4)}`,
-              facingMode: 'unknown'
-            };
-          }
-        })
-      );
+        if (aIsMain && !bIsMain) return -1;
+        if (!aIsMain && bIsMain) return 1;
 
-      // Filter only back cameras (environment)
-      // Exclude front cameras (user)
-      const backCameras = camerasWithFacing.filter(
-        c => c.facingMode === 'environment'
-      );
+        return 0;
+      });
 
-      // If no confirmed back cameras, include unknown ones (for desktop/fallback)
-      // but still exclude confirmed front cameras
-      const availableCameras = backCameras.length > 0
-        ? backCameras
-        : camerasWithFacing.filter(c => c.facingMode !== 'user');
+      // Use filtered cameras, or all if no back cameras found
+      const camerasToUse = sortedBackCameras.length > 0 ? sortedBackCameras : availableCameras;
 
-      // If still nothing, use all cameras as last resort
-      const finalCameras = availableCameras.length > 0 ? availableCameras : camerasWithFacing;
-
-      setCameras(finalCameras);
-
-      // Select the first back camera as default (best for QR scanning)
-      const defaultCamera = finalCameras.find(c => c.facingMode === 'environment')
-        || finalCameras[0];
-
-      if (defaultCamera && !selectedCamera) {
-        setSelectedCamera(defaultCamera.deviceId);
-      }
-
+      setCameras(camerasToUse);
       setCamerasLoading(false);
-      return finalCameras;
+
+      return camerasToUse;
     } catch (err) {
-      console.log('Could not enumerate cameras:', err);
+      console.log('Could not list cameras:', err);
       setCamerasLoading(false);
       return [];
     }
-  }, [selectedCamera]);
+  }, []);
 
-  // Get cameras on mount
+  // Load cameras on mount
   useEffect(() => {
-    getCamerasWithFacingMode();
+    loadCameras();
 
-    // Listen for camera changes (device connected/disconnected)
-    const handleDeviceChange = () => {
-      getCamerasWithFacingMode();
-    };
-
-    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    // Listen for camera changes
+    const handleDeviceChange = () => loadCameras();
+    navigator.mediaDevices?.addEventListener('devicechange', handleDeviceChange);
 
     return () => {
-      navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+      navigator.mediaDevices?.removeEventListener('devicechange', handleDeviceChange);
     };
-  }, [getCamerasWithFacingMode]);
+  }, [loadCameras]);
 
   const stopScanner = useCallback(() => {
     if (scannerRef.current) {
@@ -158,46 +109,89 @@ const QrScannerPage = () => {
     setIsScanning(false);
     setZoomLevel(1);
     setZoomSupported(false);
+    setCurrentFacingMode(null);
   }, []);
 
   useEffect(() => {
-    return () => {
-      stopScanner();
-    };
+    return () => stopScanner();
   }, [stopScanner]);
 
-  // Initialize zoom capabilities when video stream is ready
+  // Initialize zoom after camera is ready
   const initializeZoom = useCallback(async () => {
     if (!videoRef.current?.srcObject) return;
 
     const stream = videoRef.current.srcObject;
     const track = stream.getVideoTracks()[0];
 
-    if (!track || typeof track.getCapabilities !== 'function') {
-      console.log('Zoom not supported: getCapabilities not available');
-      return;
+    if (!track) return;
+
+    // Check actual facing mode of the active camera
+    if (typeof track.getSettings === 'function') {
+      const settings = track.getSettings();
+      setCurrentFacingMode(settings.facingMode || 'unknown');
     }
 
-    const capabilities = track.getCapabilities();
+    // Setup zoom if supported
+    if (typeof track.getCapabilities === 'function') {
+      const capabilities = track.getCapabilities();
 
-    if (capabilities?.zoom) {
-      setZoomSupported(true);
-      setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
+      if (capabilities?.zoom) {
+        setZoomSupported(true);
+        setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
 
-      // Set default zoom to 2x (or max if less than 2)
-      const defaultZoom = Math.min(2, capabilities.zoom.max);
-      setZoomLevel(defaultZoom);
+        // Set default zoom to 2x for better QR scanning
+        const defaultZoom = Math.min(2, capabilities.zoom.max);
+        setZoomLevel(defaultZoom);
 
-      try {
-        await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
-      } catch (err) {
-        console.log('Failed to apply default zoom:', err);
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
+        } catch (err) {
+          console.log('Failed to apply default zoom:', err);
+        }
       }
-    } else {
-      console.log('Zoom not supported on this camera');
-      setZoomSupported(false);
     }
   }, []);
+
+  // Verify camera is back-facing after start, retry if not
+  const verifyCameraAndRetry = useCallback(async () => {
+    if (!videoRef.current?.srcObject || !scannerRef.current) return;
+
+    const stream = videoRef.current.srcObject;
+    const track = stream.getVideoTracks()[0];
+
+    if (!track || typeof track.getSettings !== 'function') return;
+
+    const settings = track.getSettings();
+    const facingMode = settings.facingMode;
+
+    setCurrentFacingMode(facingMode || 'unknown');
+
+    // If we got front camera but wanted back, try to switch
+    if (facingMode === 'user' && selectedCamera === 'environment') {
+      console.log('Got front camera, attempting to switch to back camera...');
+
+      try {
+        // Try using setCamera to switch to environment
+        await scannerRef.current.setCamera('environment');
+
+        // Re-check after switch
+        setTimeout(async () => {
+          if (videoRef.current?.srcObject) {
+            const newTrack = videoRef.current.srcObject.getVideoTracks()[0];
+            if (newTrack && typeof newTrack.getSettings === 'function') {
+              const newSettings = newTrack.getSettings();
+              setCurrentFacingMode(newSettings.facingMode || 'unknown');
+            }
+          }
+          initializeZoom();
+        }, 500);
+      } catch (err) {
+        console.log('Failed to switch camera:', err);
+      }
+    } else {
+      initializeZoom();
+    }
+  }, [selectedCamera, initializeZoom]);
 
   const startScanner = async () => {
     try {
@@ -210,73 +204,78 @@ const QrScannerPage = () => {
         return;
       }
 
-      // Find the selected camera's facing mode
-      const selectedCameraInfo = cameras.find(c => c.deviceId === selectedCamera);
-      const isConfirmedBackCamera = selectedCameraInfo?.facingMode === 'environment';
-
-      const scannerOptions = {
-        returnDetailedScanResult: true,
-        highlightScanRegion: true,
-        highlightCodeOutline: true,
-      };
-
-      // Always prefer 'environment' facingMode for reliability on Android
-      // Only use deviceId if we have multiple confirmed back cameras
-      if (selectedCamera && isConfirmedBackCamera && cameras.filter(c => c.facingMode === 'environment').length > 1) {
-        // Multiple back cameras - use specific deviceId
-        scannerOptions.preferredCamera = selectedCamera;
-      } else {
-        // Default to environment facingMode for best compatibility
-        scannerOptions.preferredCamera = 'environment';
-      }
+      // Always use 'environment' as preferred camera for reliability
+      // This is the most reliable way to get back camera on Android
+      const preferredCamera = selectedCamera === 'environment'
+        ? 'environment'
+        : selectedCamera;
 
       scannerRef.current = new QrScanner(
         videoRef.current,
         (result) => {
           setScanResult(result.data);
-          // Capture the frame as image
           if (videoRef.current) {
             const canvas = document.createElement('canvas');
             canvas.width = videoRef.current.videoWidth;
             canvas.height = videoRef.current.videoHeight;
             const ctx = canvas.getContext('2d');
             ctx.drawImage(videoRef.current, 0, 0);
-            const imageUrl = canvas.toDataURL('image/png');
-            setCapturedImage(imageUrl);
+            setCapturedImage(canvas.toDataURL('image/png'));
           }
           if (scanMode === 'live') {
             stopScanner();
           }
         },
-        scannerOptions
+        {
+          returnDetailedScanResult: true,
+          highlightScanRegion: true,
+          highlightCodeOutline: true,
+          preferredCamera: preferredCamera,
+        }
       );
 
-      // Set up event listener for when video metadata is loaded
+      // Listen for video ready
       const handleLoadedMetadata = () => {
-        // Small delay to ensure stream is fully ready
-        setTimeout(initializeZoom, 100);
+        setTimeout(verifyCameraAndRetry, 300);
       };
 
-      videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata);
+      videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
 
       await scannerRef.current.start();
       setIsScanning(true);
 
-      // Also try to initialize zoom after start (fallback if event already fired)
+      // Fallback check if event already fired
       if (videoRef.current.readyState >= 1) {
-        setTimeout(initializeZoom, 100);
+        setTimeout(verifyCameraAndRetry, 300);
       }
     } catch (err) {
+      console.error('Scanner start error:', err);
       setError(`Failed to start scanner: ${err.message}`);
       setIsScanning(false);
     }
   };
 
+  // Handle camera selection change
+  const handleCameraChange = async (newCameraId) => {
+    setSelectedCamera(newCameraId);
+
+    if (isScanning && scannerRef.current) {
+      try {
+        await scannerRef.current.setCamera(newCameraId);
+        setTimeout(verifyCameraAndRetry, 300);
+      } catch (err) {
+        console.error('Failed to switch camera:', err);
+        // Restart scanner with new camera
+        stopScanner();
+        setTimeout(() => startScanner(), 100);
+      }
+    }
+  };
+
   const handleZoomChange = async (newZoom) => {
     setZoomLevel(newZoom);
-    if (videoRef.current && videoRef.current.srcObject) {
-      const stream = videoRef.current.srcObject;
-      const track = stream.getVideoTracks()[0];
+    if (videoRef.current?.srcObject) {
+      const track = videoRef.current.srcObject.getVideoTracks()[0];
       if (track) {
         try {
           await track.applyConstraints({ advanced: [{ zoom: newZoom }] });
@@ -294,25 +293,22 @@ const QrScannerPage = () => {
     }
 
     try {
-      // Create canvas to capture frame
       const canvas = document.createElement('canvas');
       canvas.width = videoRef.current.videoWidth;
       canvas.height = videoRef.current.videoHeight;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(videoRef.current, 0, 0);
 
-      // Show captured image
       const imageUrl = canvas.toDataURL('image/png');
       setCapturedImage(imageUrl);
 
-      // Convert to blob for scanning
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
 
       try {
         const result = await QrScanner.scanImage(blob, { returnDetailedScanResult: true });
         setScanResult(result.data);
         setError(null);
-      } catch (err) {
+      } catch {
         setError('No QR code found in the captured image');
         setScanResult(null);
       }
@@ -335,7 +331,7 @@ const QrScannerPage = () => {
       try {
         const result = await QrScanner.scanImage(file, { returnDetailedScanResult: true });
         setScanResult(result.data);
-      } catch (err) {
+      } catch {
         setError('No QR code found in the uploaded image');
       }
     } catch (err) {
@@ -350,6 +346,13 @@ const QrScannerPage = () => {
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  // Get display label for current camera state
+  const getCameraStatusLabel = () => {
+    if (currentFacingMode === 'environment') return '(Back Camera)';
+    if (currentFacingMode === 'user') return '(Front Camera - Wrong!)';
+    return '';
   };
 
   return (
@@ -382,27 +385,24 @@ const QrScannerPage = () => {
       <div className="camera-selector">
         {camerasLoading ? (
           <span className="camera-loading">Detecting cameras...</span>
-        ) : cameras.length === 0 ? (
-          <span className="camera-error">No back cameras found</span>
-        ) : cameras.length === 1 ? (
-          <span className="camera-single">{cameras[0].label}</span>
         ) : (
           <select
             value={selectedCamera}
-            onChange={(e) => {
-              setSelectedCamera(e.target.value);
-              if (isScanning) {
-                stopScanner();
-              }
-            }}
+            onChange={(e) => handleCameraChange(e.target.value)}
             className="camera-select"
           >
+            <option value="environment">Back Camera (Auto)</option>
             {cameras.map((camera, index) => (
-              <option key={camera.deviceId} value={camera.deviceId}>
+              <option key={camera.id} value={camera.id}>
                 {camera.label || `Camera ${index + 1}`}
               </option>
             ))}
           </select>
+        )}
+        {isScanning && currentFacingMode && (
+          <span className={`camera-status ${currentFacingMode === 'user' ? 'wrong' : 'correct'}`}>
+            {getCameraStatusLabel()}
+          </span>
         )}
       </div>
 
