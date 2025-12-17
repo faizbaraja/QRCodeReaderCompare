@@ -177,8 +177,8 @@ const ZXingScannerPage = () => {
     };
   }, [loadCameras, stopAllTracks]);
 
-  // Initialize zoom after stream is ready
-  const initializeZoom = useCallback(async () => {
+  // Initialize camera features (zoom, autofocus) after stream is ready
+  const initializeCameraFeatures = useCallback(async () => {
     if (!videoRef.current?.srcObject) return;
 
     const stream = videoRef.current.srcObject;
@@ -186,21 +186,40 @@ const ZXingScannerPage = () => {
 
     if (!track) return;
 
-    if (typeof track.getCapabilities === 'function') {
-      const capabilities = track.getCapabilities();
+    if (typeof track.getCapabilities !== 'function') return;
 
-      if (capabilities?.zoom) {
-        setZoomSupported(true);
-        setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
+    const capabilities = track.getCapabilities();
+    console.log('[ZXing] Camera capabilities:', capabilities);
 
-        const defaultZoom = Math.min(2, capabilities.zoom.max);
-        setZoomLevel(defaultZoom);
+    // Setup continuous autofocus if supported
+    if (capabilities?.focusMode) {
+      console.log('[ZXing] Available focus modes:', capabilities.focusMode);
 
+      if (capabilities.focusMode.includes('continuous')) {
         try {
-          await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
+          await track.applyConstraints({
+            advanced: [{ focusMode: 'continuous' }]
+          });
+          console.log('[ZXing] Continuous autofocus enabled');
         } catch (err) {
-          console.log('[ZXing] Failed to apply default zoom:', err);
+          console.log('[ZXing] Failed to enable continuous autofocus:', err);
         }
+      }
+    }
+
+    // Setup zoom if supported
+    if (capabilities?.zoom) {
+      setZoomSupported(true);
+      setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
+
+      const defaultZoom = Math.min(2, capabilities.zoom.max);
+      setZoomLevel(defaultZoom);
+
+      try {
+        await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
+        console.log('[ZXing] Default zoom set to:', defaultZoom);
+      } catch (err) {
+        console.log('[ZXing] Failed to apply default zoom:', err);
       }
     }
   }, []);
@@ -262,7 +281,7 @@ const ZXingScannerPage = () => {
       );
 
       setIsScanning(true);
-      setTimeout(initializeZoom, 300);
+      setTimeout(initializeCameraFeatures, 300);
 
     } catch (err) {
       console.error('[ZXing] Scanner start error:', err);
@@ -309,7 +328,7 @@ const ZXingScannerPage = () => {
             );
 
             setIsScanning(true);
-            setTimeout(initializeZoom, 300);
+            setTimeout(initializeCameraFeatures, 300);
           }
         } catch (err) {
           console.error('[ZXing] Failed to switch camera:', err);

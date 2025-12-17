@@ -192,8 +192,8 @@ const QrScannerPage = () => {
     return () => stopScanner();
   }, [stopScanner]);
 
-  // Initialize zoom after camera is ready
-  const initializeZoom = useCallback(async () => {
+  // Initialize camera features (zoom, autofocus) after stream is ready
+  const initializeCameraFeatures = useCallback(async () => {
     if (!videoRef.current?.srcObject) return;
 
     const stream = videoRef.current.srcObject;
@@ -207,23 +207,41 @@ const QrScannerPage = () => {
       setCurrentFacingMode(settings.facingMode || 'unknown');
     }
 
-    // Setup zoom if supported
-    if (typeof track.getCapabilities === 'function') {
-      const capabilities = track.getCapabilities();
+    if (typeof track.getCapabilities !== 'function') return;
 
-      if (capabilities?.zoom) {
-        setZoomSupported(true);
-        setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
+    const capabilities = track.getCapabilities();
+    console.log('[QR Scanner] Camera capabilities:', capabilities);
 
-        // Set default zoom to 2x for better QR scanning
-        const defaultZoom = Math.min(2, capabilities.zoom.max);
-        setZoomLevel(defaultZoom);
+    // Setup continuous autofocus if supported
+    if (capabilities?.focusMode) {
+      console.log('[QR Scanner] Available focus modes:', capabilities.focusMode);
 
+      if (capabilities.focusMode.includes('continuous')) {
         try {
-          await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
+          await track.applyConstraints({
+            advanced: [{ focusMode: 'continuous' }]
+          });
+          console.log('[QR Scanner] Continuous autofocus enabled');
         } catch (err) {
-          console.log('Failed to apply default zoom:', err);
+          console.log('[QR Scanner] Failed to enable continuous autofocus:', err);
         }
+      }
+    }
+
+    // Setup zoom if supported
+    if (capabilities?.zoom) {
+      setZoomSupported(true);
+      setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
+
+      // Set default zoom to 2x for better QR scanning
+      const defaultZoom = Math.min(2, capabilities.zoom.max);
+      setZoomLevel(defaultZoom);
+
+      try {
+        await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
+        console.log('[QR Scanner] Default zoom set to:', defaultZoom);
+      } catch (err) {
+        console.log('[QR Scanner] Failed to apply default zoom:', err);
       }
     }
   }, []);
@@ -259,15 +277,15 @@ const QrScannerPage = () => {
               setCurrentFacingMode(newSettings.facingMode || 'unknown');
             }
           }
-          initializeZoom();
+          initializeCameraFeatures();
         }, 500);
       } catch (err) {
         console.log('Failed to switch camera:', err);
       }
     } else {
-      initializeZoom();
+      initializeCameraFeatures();
     }
-  }, [selectedCamera, initializeZoom]);
+  }, [selectedCamera, initializeCameraFeatures]);
 
   const startScanner = async () => {
     try {
@@ -318,7 +336,7 @@ const QrScannerPage = () => {
       setIsScanning(true);
 
       // Initialize zoom after stream is ready
-      setTimeout(initializeZoom, 300);
+      setTimeout(initializeCameraFeatures, 300);
 
     } catch (err) {
       console.error('Scanner start error:', err);
@@ -368,7 +386,7 @@ const QrScannerPage = () => {
 
             await scannerRef.current.start();
             setIsScanning(true);
-            setTimeout(initializeZoom, 300);
+            setTimeout(initializeCameraFeatures, 300);
           }
         } catch (err) {
           console.error('Failed to switch camera:', err);
