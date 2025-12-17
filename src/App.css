@@ -106,6 +106,28 @@
   border-radius: 8px;
 }
 
+.video-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.video-container video {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+/* QR Scanner library overlay styles */
+.scan-region-highlight {
+  border-radius: 8px !important;
+}
+
+.code-outline-highlight {
+  stroke: #22c55e !important;
+  stroke-width: 3 !important;
+}
+
 #qr-reader {
   width: 100%;
   height: 100%;

@@ -154,16 +154,27 @@ const QrScannerPage = () => {
       </div>
 
       <div className="scanner-area">
-        <video
-          ref={videoRef}
+        <div
+          className="video-container"
           style={{
             width: '100%',
+            height: '100%',
             display: isScanning ? 'block' : 'none',
-            borderRadius: '8px'
+            position: 'relative'
           }}
-          playsInline
-          muted
-        />
+        >
+          <video
+            ref={videoRef}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              borderRadius: '8px'
+            }}
+            playsInline
+            muted
+          />
+        </div>
 
         {!isScanning && !capturedImage && (
           <div className="placeholder">
