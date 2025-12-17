@@ -10,9 +10,32 @@ const QRCodeScanner = () => {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [zoomSupported, setZoomSupported] = useState(false);
   const [zoomRange, setZoomRange] = useState({ min: 1, max: 1 });
+  const [cameras, setCameras] = useState([]);
+  const [selectedCamera, setSelectedCamera] = useState('');
   const scannerRef = useRef(null);
   const html5QrCodeRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // Get available cameras on mount
+  useEffect(() => {
+    const getCameras = async () => {
+      try {
+        await navigator.mediaDevices.getUserMedia({ video: true });
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        setCameras(videoDevices);
+        const backCamera = videoDevices.find(d =>
+          d.label.toLowerCase().includes('back') ||
+          d.label.toLowerCase().includes('rear') ||
+          d.label.toLowerCase().includes('environment')
+        );
+        setSelectedCamera(backCamera?.deviceId || videoDevices[0]?.deviceId || '');
+      } catch (err) {
+        console.log('Could not enumerate cameras:', err);
+      }
+    };
+    getCameras();
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -36,8 +59,12 @@ const QRCodeScanner = () => {
         aspectRatio: 1.0,
       };
 
+      const cameraConfig = selectedCamera
+        ? { deviceId: { exact: selectedCamera } }
+        : { facingMode: 'environment' };
+
       await html5QrCodeRef.current.start(
-        { facingMode: 'environment' },
+        cameraConfig,
         config,
         (decodedText, decodedResult) => {
           setScanResult(decodedText);
@@ -223,6 +250,27 @@ const QRCodeScanner = () => {
           Capture & Decode
         </button>
       </div>
+
+      {cameras.length > 1 && (
+        <div className="camera-selector">
+          <select
+            value={selectedCamera}
+            onChange={(e) => {
+              setSelectedCamera(e.target.value);
+              if (isScanning) {
+                stopScanner();
+              }
+            }}
+            className="camera-select"
+          >
+            {cameras.map((camera, index) => (
+              <option key={camera.deviceId} value={camera.deviceId}>
+                {camera.label || `Camera ${index + 1}`}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="scanner-area">
         <div id="qr-reader" ref={scannerRef}></div>

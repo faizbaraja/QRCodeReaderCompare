@@ -10,11 +10,36 @@ const ZBarScanner = () => {
   const [zoomLevel, setZoomLevel] = useState(1);
   const [zoomSupported, setZoomSupported] = useState(false);
   const [zoomRange, setZoomRange] = useState({ min: 1, max: 1 });
+  const [cameras, setCameras] = useState([]);
+  const [selectedCamera, setSelectedCamera] = useState('');
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const animationRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // Get available cameras on mount
+  useEffect(() => {
+    const getCameras = async () => {
+      try {
+        // Request permission first to get labeled devices
+        await navigator.mediaDevices.getUserMedia({ video: true });
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        setCameras(videoDevices);
+        // Default to back camera if available
+        const backCamera = videoDevices.find(d =>
+          d.label.toLowerCase().includes('back') ||
+          d.label.toLowerCase().includes('rear') ||
+          d.label.toLowerCase().includes('environment')
+        );
+        setSelectedCamera(backCamera?.deviceId || videoDevices[0]?.deviceId || '');
+      } catch (err) {
+        console.log('Could not enumerate cameras:', err);
+      }
+    };
+    getCameras();
+  }, []);
 
   const stopCamera = useCallback(() => {
     if (animationRef.current) {
@@ -93,9 +118,11 @@ const ZBarScanner = () => {
       setScanResult(null);
       setCapturedImage(null);
 
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
-      });
+      const videoConstraints = selectedCamera
+        ? { deviceId: { exact: selectedCamera }, width: { ideal: 1280 }, height: { ideal: 720 } }
+        : { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } };
+
+      const stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
 
       streamRef.current = stream;
       if (videoRef.current) {
@@ -260,6 +287,27 @@ const ZBarScanner = () => {
           Capture & Decode
         </button>
       </div>
+
+      {cameras.length > 1 && (
+        <div className="camera-selector">
+          <select
+            value={selectedCamera}
+            onChange={(e) => {
+              setSelectedCamera(e.target.value);
+              if (isScanning) {
+                stopCamera();
+              }
+            }}
+            className="camera-select"
+          >
+            {cameras.map((camera, index) => (
+              <option key={camera.deviceId} value={camera.deviceId}>
+                {camera.label || `Camera ${index + 1}`}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="scanner-area">
         <video
