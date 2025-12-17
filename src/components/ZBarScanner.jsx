@@ -7,6 +7,9 @@ const ZBarScanner = () => {
   const [error, setError] = useState(null);
   const [scanMode, setScanMode] = useState('live');
   const [capturedImage, setCapturedImage] = useState(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [zoomSupported, setZoomSupported] = useState(false);
+  const [zoomRange, setZoomRange] = useState({ min: 1, max: 1 });
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
@@ -26,6 +29,8 @@ const ZBarScanner = () => {
       videoRef.current.srcObject = null;
     }
     setIsScanning(false);
+    setZoomLevel(1);
+    setZoomSupported(false);
   }, []);
 
   useEffect(() => {
@@ -53,6 +58,9 @@ const ZBarScanner = () => {
         if (symbols.length > 0) {
           const result = symbols[0].decode();
           setScanResult(result);
+          // Capture the frame as image
+          const imageUrl = canvas.toDataURL('image/png');
+          setCapturedImage(imageUrl);
           if (scanMode === 'live') {
             stopCamera();
             return;
@@ -95,10 +103,35 @@ const ZBarScanner = () => {
         await videoRef.current.play();
       }
 
+      // Check zoom capability
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        const capabilities = track.getCapabilities();
+        if (capabilities.zoom) {
+          setZoomSupported(true);
+          setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
+          setZoomLevel(capabilities.zoom.min);
+        }
+      }
+
       setIsScanning(true);
     } catch (err) {
       setError(`Failed to start camera: ${err.message}`);
       setIsScanning(false);
+    }
+  };
+
+  const handleZoomChange = async (newZoom) => {
+    setZoomLevel(newZoom);
+    if (streamRef.current) {
+      const track = streamRef.current.getVideoTracks()[0];
+      if (track) {
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: newZoom }] });
+        } catch (err) {
+          console.error('Failed to apply zoom:', err);
+        }
+      }
     }
   };
 
@@ -243,6 +276,21 @@ const ZBarScanner = () => {
           </div>
         )}
       </div>
+
+      {isScanning && zoomSupported && (
+        <div className="zoom-control">
+          <span className="zoom-label">Zoom: {zoomLevel.toFixed(1)}x</span>
+          <input
+            type="range"
+            min={zoomRange.min}
+            max={zoomRange.max}
+            step="0.1"
+            value={zoomLevel}
+            onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
+            className="zoom-slider"
+          />
+        </div>
+      )}
 
       <div className="controls">
         {scanMode === 'live' ? (

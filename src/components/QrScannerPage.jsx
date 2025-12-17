@@ -7,6 +7,9 @@ const QrScannerPage = () => {
   const [error, setError] = useState(null);
   const [scanMode, setScanMode] = useState('live');
   const [capturedImage, setCapturedImage] = useState(null);
+  const [zoomLevel, setZoomLevel] = useState(1);
+  const [zoomSupported, setZoomSupported] = useState(false);
+  const [zoomRange, setZoomRange] = useState({ min: 1, max: 1 });
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -18,6 +21,8 @@ const QrScannerPage = () => {
       scannerRef.current = null;
     }
     setIsScanning(false);
+    setZoomLevel(1);
+    setZoomSupported(false);
   }, []);
 
   useEffect(() => {
@@ -41,6 +46,16 @@ const QrScannerPage = () => {
         videoRef.current,
         (result) => {
           setScanResult(result.data);
+          // Capture the frame as image
+          if (videoRef.current) {
+            const canvas = document.createElement('canvas');
+            canvas.width = videoRef.current.videoWidth;
+            canvas.height = videoRef.current.videoHeight;
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(videoRef.current, 0, 0);
+            const imageUrl = canvas.toDataURL('image/png');
+            setCapturedImage(imageUrl);
+          }
           if (scanMode === 'live') {
             stopScanner();
           }
@@ -55,9 +70,40 @@ const QrScannerPage = () => {
 
       await scannerRef.current.start();
       setIsScanning(true);
+
+      // Check zoom capability after a short delay
+      setTimeout(() => {
+        if (videoRef.current && videoRef.current.srcObject) {
+          const stream = videoRef.current.srcObject;
+          const track = stream.getVideoTracks()[0];
+          if (track) {
+            const capabilities = track.getCapabilities();
+            if (capabilities.zoom) {
+              setZoomSupported(true);
+              setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
+              setZoomLevel(capabilities.zoom.min);
+            }
+          }
+        }
+      }, 500);
     } catch (err) {
       setError(`Failed to start scanner: ${err.message}`);
       setIsScanning(false);
+    }
+  };
+
+  const handleZoomChange = async (newZoom) => {
+    setZoomLevel(newZoom);
+    if (videoRef.current && videoRef.current.srcObject) {
+      const stream = videoRef.current.srcObject;
+      const track = stream.getVideoTracks()[0];
+      if (track) {
+        try {
+          await track.applyConstraints({ advanced: [{ zoom: newZoom }] });
+        } catch (err) {
+          console.error('Failed to apply zoom:', err);
+        }
+      }
     }
   };
 
@@ -189,6 +235,21 @@ const QrScannerPage = () => {
           </div>
         )}
       </div>
+
+      {isScanning && zoomSupported && (
+        <div className="zoom-control">
+          <span className="zoom-label">Zoom: {zoomLevel.toFixed(1)}x</span>
+          <input
+            type="range"
+            min={zoomRange.min}
+            max={zoomRange.max}
+            step="0.1"
+            value={zoomLevel}
+            onChange={(e) => handleZoomChange(parseFloat(e.target.value))}
+            className="zoom-slider"
+          />
+        </div>
+      )}
 
       <div className="controls">
         {scanMode === 'live' ? (
