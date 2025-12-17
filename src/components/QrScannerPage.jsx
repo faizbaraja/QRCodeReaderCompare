@@ -22,13 +22,24 @@ const QrScannerPage = () => {
     try {
       setCamerasLoading(true);
 
-      // Request permission first
-      await navigator.mediaDevices.getUserMedia({ video: true });
+      // Request permission with environment facing mode first (back camera)
+      // This ensures we get proper access to back cameras on Android
+      try {
+        const initialStream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' }
+        });
+        initialStream.getTracks().forEach(t => t.stop());
+      } catch {
+        // Fallback to any camera if environment not available
+        const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true });
+        fallbackStream.getTracks().forEach(t => t.stop());
+      }
 
       const devices = await navigator.mediaDevices.enumerateDevices();
       const videoDevices = devices.filter(device => device.kind === 'videoinput');
 
-      // Get actual facingMode for each camera
+      // Get actual facingMode for each camera using getSettings()
+      // getSettings() is more reliable than getCapabilities() on Android Chrome
       const camerasWithFacing = await Promise.all(
         videoDevices.map(async (device) => {
           try {
@@ -38,13 +49,33 @@ const QrScannerPage = () => {
             const track = stream.getVideoTracks()[0];
             let facingMode = 'unknown';
 
-            if (track && typeof track.getCapabilities === 'function') {
-              const capabilities = track.getCapabilities();
-              // facingMode can be an array or string
-              if (capabilities?.facingMode) {
-                facingMode = Array.isArray(capabilities.facingMode)
-                  ? capabilities.facingMode[0]
-                  : capabilities.facingMode;
+            if (track) {
+              // Try getSettings() first - more reliable for current state
+              if (typeof track.getSettings === 'function') {
+                const settings = track.getSettings();
+                if (settings?.facingMode) {
+                  facingMode = settings.facingMode;
+                }
+              }
+
+              // Fallback to getCapabilities() if getSettings didn't work
+              if (facingMode === 'unknown' && typeof track.getCapabilities === 'function') {
+                const capabilities = track.getCapabilities();
+                if (capabilities?.facingMode) {
+                  facingMode = Array.isArray(capabilities.facingMode)
+                    ? capabilities.facingMode[0]
+                    : capabilities.facingMode;
+                }
+              }
+
+              // Final fallback: check label for hints
+              if (facingMode === 'unknown') {
+                const label = device.label.toLowerCase();
+                if (label.includes('back') || label.includes('rear') || label.includes('environment')) {
+                  facingMode = 'environment';
+                } else if (label.includes('front') || label.includes('user') || label.includes('face')) {
+                  facingMode = 'user';
+                }
               }
             }
 
@@ -68,27 +99,33 @@ const QrScannerPage = () => {
         })
       );
 
-      // Filter only back cameras (environment) or unknown (for desktop/fallback)
+      // Filter only back cameras (environment)
       // Exclude front cameras (user)
       const backCameras = camerasWithFacing.filter(
-        c => c.facingMode === 'environment' || c.facingMode === 'unknown'
+        c => c.facingMode === 'environment'
       );
 
-      // If no back cameras found, use all cameras as fallback
-      const availableCameras = backCameras.length > 0 ? backCameras : camerasWithFacing;
+      // If no confirmed back cameras, include unknown ones (for desktop/fallback)
+      // but still exclude confirmed front cameras
+      const availableCameras = backCameras.length > 0
+        ? backCameras
+        : camerasWithFacing.filter(c => c.facingMode !== 'user');
 
-      setCameras(availableCameras);
+      // If still nothing, use all cameras as last resort
+      const finalCameras = availableCameras.length > 0 ? availableCameras : camerasWithFacing;
+
+      setCameras(finalCameras);
 
       // Select the first back camera as default (best for QR scanning)
-      const defaultCamera = availableCameras.find(c => c.facingMode === 'environment')
-        || availableCameras[0];
+      const defaultCamera = finalCameras.find(c => c.facingMode === 'environment')
+        || finalCameras[0];
 
       if (defaultCamera && !selectedCamera) {
         setSelectedCamera(defaultCamera.deviceId);
       }
 
       setCamerasLoading(false);
-      return availableCameras;
+      return finalCameras;
     } catch (err) {
       console.log('Could not enumerate cameras:', err);
       setCamerasLoading(false);
@@ -173,15 +210,23 @@ const QrScannerPage = () => {
         return;
       }
 
+      // Find the selected camera's facing mode
+      const selectedCameraInfo = cameras.find(c => c.deviceId === selectedCamera);
+      const isConfirmedBackCamera = selectedCameraInfo?.facingMode === 'environment';
+
       const scannerOptions = {
         returnDetailedScanResult: true,
         highlightScanRegion: true,
         highlightCodeOutline: true,
       };
 
-      if (selectedCamera) {
+      // Always prefer 'environment' facingMode for reliability on Android
+      // Only use deviceId if we have multiple confirmed back cameras
+      if (selectedCamera && isConfirmedBackCamera && cameras.filter(c => c.facingMode === 'environment').length > 1) {
+        // Multiple back cameras - use specific deviceId
         scannerOptions.preferredCamera = selectedCamera;
       } else {
+        // Default to environment facingMode for best compatibility
         scannerOptions.preferredCamera = 'environment';
       }
 
