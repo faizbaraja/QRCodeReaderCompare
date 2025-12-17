@@ -8,7 +8,7 @@ const ZXingScannerPage = () => {
   const [error, setError] = useState(null);
   const [scanMode, setScanMode] = useState('live');
   const [capturedImage, setCapturedImage] = useState(null);
-  const [zoomLevel, setZoomLevel] = useState(1);
+  const [zoomLevel, setZoomLevel] = useState(1.5);
   const [zoomSupported, setZoomSupported] = useState(false);
   const [zoomRange, setZoomRange] = useState({ min: 1, max: 1 });
   const [cameras, setCameras] = useState([]);
@@ -199,19 +199,25 @@ const ZXingScannerPage = () => {
       }
     }
 
-    // Setup zoom - start at 1.0
+    // Setup zoom - start at 1.5
     if (capabilities?.zoom) {
       setZoomSupported(true);
       setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
-      setZoomLevel(1);
-      console.log('[ZXing] Zoom supported, starting at 1.0x');
+      const initialZoom = Math.min(1.5, capabilities.zoom.max);
+      setZoomLevel(initialZoom);
+      try {
+        await track.applyConstraints({ advanced: [{ zoom: initialZoom }] });
+      } catch (err) {
+        console.log('[ZXing] Failed to set initial zoom:', err);
+      }
+      console.log('[ZXing] Zoom supported, starting at', initialZoom + 'x');
     }
   }, []);
 
   const stopScanner = useCallback(() => {
     stopAllTracks();
     setIsScanning(false);
-    setZoomLevel(1);
+    setZoomLevel(1.5);
     setZoomSupported(false);
     setCurrentFacingMode(null);
   }, [stopAllTracks]);
