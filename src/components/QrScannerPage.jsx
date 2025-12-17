@@ -11,12 +11,87 @@ const QrScannerPage = () => {
   const [zoomSupported, setZoomSupported] = useState(false);
   const [zoomRange, setZoomRange] = useState({ min: 1, max: 1 });
   const [cameras, setCameras] = useState([]);
-  const [selectedCamera, setSelectedCamera] = useState('environment');
+  const [selectedCamera, setSelectedCamera] = useState('');
   const [camerasLoading, setCamerasLoading] = useState(true);
   const [currentFacingMode, setCurrentFacingMode] = useState(null);
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
+  const streamRef = useRef(null);
   const fileInputRef = useRef(null);
+
+  // Stop all media tracks - important for releasing camera
+  const stopAllTracks = useCallback(() => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+      });
+      streamRef.current = null;
+    }
+    if (videoRef.current?.srcObject) {
+      const tracks = videoRef.current.srcObject.getTracks();
+      tracks.forEach(track => track.stop());
+      videoRef.current.srcObject = null;
+    }
+  }, []);
+
+  // Get camera stream with progressive fallback
+  // This gives us full control over camera selection
+  const getCameraStream = useCallback(async (preferredDeviceId) => {
+    // Stop any existing streams first
+    stopAllTracks();
+
+    // Progressive constraint fallback - try strictest first
+    const constraintsList = [];
+
+    if (preferredDeviceId && preferredDeviceId !== 'environment') {
+      // User selected specific camera
+      constraintsList.push(
+        { video: { deviceId: { exact: preferredDeviceId } } },
+        { video: { deviceId: preferredDeviceId } }
+      );
+    }
+
+    // Always try environment facing mode
+    constraintsList.push(
+      // Try exact environment first - fails if no back camera
+      { video: { facingMode: { exact: 'environment' } } },
+      // Try ideal environment - may fall back
+      { video: { facingMode: 'environment' } },
+      // Last resort - any camera
+      { video: true }
+    );
+
+    let stream = null;
+    let lastError = null;
+
+    for (const constraints of constraintsList) {
+      try {
+        console.log('Trying constraints:', JSON.stringify(constraints));
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+        console.log('Success with constraints:', JSON.stringify(constraints));
+        break;
+      } catch (err) {
+        console.log('Failed with constraints:', JSON.stringify(constraints), err.message);
+        lastError = err;
+        continue;
+      }
+    }
+
+    if (!stream) {
+      throw lastError || new Error('Could not access any camera');
+    }
+
+    // Verify what camera we got
+    const track = stream.getVideoTracks()[0];
+    if (track && typeof track.getSettings === 'function') {
+      const settings = track.getSettings();
+      console.log('Got camera:', settings.facingMode, settings.deviceId);
+      setCurrentFacingMode(settings.facingMode || 'unknown');
+    }
+
+    streamRef.current = stream;
+    return stream;
+  }, [stopAllTracks]);
 
   // Use qr-scanner's built-in listCameras method - much more reliable
   const loadCameras = useCallback(async () => {
@@ -106,11 +181,12 @@ const QrScannerPage = () => {
       scannerRef.current.destroy();
       scannerRef.current = null;
     }
+    stopAllTracks();
     setIsScanning(false);
     setZoomLevel(1);
     setZoomSupported(false);
     setCurrentFacingMode(null);
-  }, []);
+  }, [stopAllTracks]);
 
   useEffect(() => {
     return () => stopScanner();
@@ -204,12 +280,16 @@ const QrScannerPage = () => {
         return;
       }
 
-      // Always use 'environment' as preferred camera for reliability
-      // This is the most reliable way to get back camera on Android
-      const preferredCamera = selectedCamera === 'environment'
-        ? 'environment'
-        : selectedCamera;
+      // STEP 1: Manually get camera stream with our controlled constraints
+      // This bypasses qr-scanner's camera handling for more reliability
+      const stream = await getCameraStream(selectedCamera);
 
+      // STEP 2: Attach stream to video element ourselves
+      videoRef.current.srcObject = stream;
+      await videoRef.current.play();
+
+      // STEP 3: Create qr-scanner WITHOUT letting it handle camera
+      // Pass video element that already has our stream
       scannerRef.current = new QrScanner(
         videoRef.current,
         (result) => {
@@ -230,45 +310,71 @@ const QrScannerPage = () => {
           returnDetailedScanResult: true,
           highlightScanRegion: true,
           highlightCodeOutline: true,
-          preferredCamera: preferredCamera,
         }
       );
 
-      // Listen for video ready
-      const handleLoadedMetadata = () => {
-        setTimeout(verifyCameraAndRetry, 300);
-      };
-
-      videoRef.current.addEventListener('loadedmetadata', handleLoadedMetadata, { once: true });
-
+      // Start scanning (but we already have the video stream)
       await scannerRef.current.start();
       setIsScanning(true);
 
-      // Fallback check if event already fired
-      if (videoRef.current.readyState >= 1) {
-        setTimeout(verifyCameraAndRetry, 300);
-      }
+      // Initialize zoom after stream is ready
+      setTimeout(initializeZoom, 300);
+
     } catch (err) {
       console.error('Scanner start error:', err);
       setError(`Failed to start scanner: ${err.message}`);
+      stopAllTracks();
       setIsScanning(false);
     }
   };
 
-  // Handle camera selection change
+  // Handle camera selection change - restart with new camera
   const handleCameraChange = async (newCameraId) => {
     setSelectedCamera(newCameraId);
 
-    if (isScanning && scannerRef.current) {
-      try {
-        await scannerRef.current.setCamera(newCameraId);
-        setTimeout(verifyCameraAndRetry, 300);
-      } catch (err) {
-        console.error('Failed to switch camera:', err);
-        // Restart scanner with new camera
-        stopScanner();
-        setTimeout(() => startScanner(), 100);
-      }
+    // If scanning, restart with new camera
+    if (isScanning) {
+      stopScanner();
+      // Small delay to ensure cleanup
+      setTimeout(async () => {
+        try {
+          const stream = await getCameraStream(newCameraId);
+          if (videoRef.current) {
+            videoRef.current.srcObject = stream;
+            await videoRef.current.play();
+
+            scannerRef.current = new QrScanner(
+              videoRef.current,
+              (result) => {
+                setScanResult(result.data);
+                if (videoRef.current) {
+                  const canvas = document.createElement('canvas');
+                  canvas.width = videoRef.current.videoWidth;
+                  canvas.height = videoRef.current.videoHeight;
+                  const ctx = canvas.getContext('2d');
+                  ctx.drawImage(videoRef.current, 0, 0);
+                  setCapturedImage(canvas.toDataURL('image/png'));
+                }
+                if (scanMode === 'live') {
+                  stopScanner();
+                }
+              },
+              {
+                returnDetailedScanResult: true,
+                highlightScanRegion: true,
+                highlightCodeOutline: true,
+              }
+            );
+
+            await scannerRef.current.start();
+            setIsScanning(true);
+            setTimeout(initializeZoom, 300);
+          }
+        } catch (err) {
+          console.error('Failed to switch camera:', err);
+          setError(`Failed to switch camera: ${err.message}`);
+        }
+      }, 100);
     }
   };
 
