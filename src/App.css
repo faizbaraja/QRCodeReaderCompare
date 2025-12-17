@@ -309,3 +309,143 @@
     border: 1px solid #e5e7eb;
   }
 }
+
+/* Mobile responsive styles */
+@media (max-width: 480px) {
+  .app {
+    padding: 12px;
+  }
+
+  .nav-container {
+    gap: 6px;
+    padding: 8px;
+    margin-bottom: 20px;
+  }
+
+  .nav-link {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+  }
+
+  .qr-scanner-container {
+    gap: 16px;
+  }
+
+  .qr-scanner-container h1 {
+    font-size: 1.4rem;
+    margin-bottom: 5px;
+  }
+
+  .mode-selector {
+    width: 100%;
+    gap: 8px;
+  }
+
+  .mode-btn {
+    flex: 1;
+    padding: 10px 12px;
+    font-size: 0.9rem;
+  }
+
+  .scanner-area {
+    min-height: 280px;
+    border-radius: 10px;
+  }
+
+  .control-btn {
+    padding: 14px 20px;
+    font-size: 0.95rem;
+    min-height: 48px;
+  }
+
+  .capture-controls {
+    width: 100%;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .capture-controls .control-btn {
+    width: 100%;
+  }
+
+  .upload-section {
+    flex-direction: column;
+    width: 100%;
+    gap: 12px;
+  }
+
+  .upload-btn {
+    width: 100%;
+    padding: 14px 20px;
+    text-align: center;
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .error-message {
+    padding: 12px 16px;
+    font-size: 0.9rem;
+  }
+
+  .result-container {
+    padding: 16px;
+  }
+
+  .result-container h2 {
+    font-size: 1.1rem;
+  }
+
+  .result-text {
+    padding: 12px;
+    font-size: 0.85rem;
+  }
+
+  .copy-btn, .open-link-btn {
+    padding: 12px 16px;
+    font-size: 0.85rem;
+    min-height: 44px;
+  }
+
+  .placeholder {
+    padding: 30px 15px;
+  }
+}
+
+/* Extra small devices */
+@media (max-width: 360px) {
+  .nav-link {
+    padding: 8px 12px;
+    font-size: 0.85rem;
+  }
+
+  .qr-scanner-container h1 {
+    font-size: 1.2rem;
+  }
+
+  .mode-btn {
+    padding: 8px 10px;
+    font-size: 0.85rem;
+  }
+}
+
+/* Touch-friendly improvements */
+@media (hover: none) and (pointer: coarse) {
+  .control-btn,
+  .mode-btn,
+  .nav-link,
+  .upload-btn,
+  .copy-btn,
+  .open-link-btn {
+    min-height: 44px;
+  }
+
+  .control-btn:active,
+  .mode-btn:active,
+  .upload-btn:active,
+  .copy-btn:active,
+  .open-link-btn:active {
+    transform: scale(0.98);
+  }
+}
