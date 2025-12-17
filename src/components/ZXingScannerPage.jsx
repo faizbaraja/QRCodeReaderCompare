@@ -216,18 +216,15 @@ const ZXingScannerPage = () => {
     setCurrentFacingMode(null);
   }, [stopAllTracks]);
 
-  const startScanner = async () => {
+  // Start camera and decoding (called after video element is mounted)
+  const initializeScanner = useCallback(async (cameraId) => {
     try {
-      setError(null);
-      setScanResult(null);
-      setCapturedImage(null);
-
       if (!videoRef.current) {
-        setError('Video element not found');
+        console.log('[ZXing] Video element not ready yet');
         return;
       }
 
-      const stream = await getCameraStream(selectedCamera);
+      const stream = await getCameraStream(cameraId);
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
 
@@ -258,60 +255,42 @@ const ZXingScannerPage = () => {
         }
       );
 
-      setIsScanning(true);
       setTimeout(initializeCameraFeatures, 300);
 
     } catch (err) {
-      console.error('[ZXing] Scanner start error:', err);
+      console.error('[ZXing] Scanner init error:', err);
       setError(`Failed to start scanner: ${err.message}`);
       stopAllTracks();
       setIsScanning(false);
     }
+  }, [getCameraStream, scanMode, stopScanner, initializeCameraFeatures, stopAllTracks]);
+
+  // Effect to initialize scanner when isScanning becomes true
+  useEffect(() => {
+    if (isScanning && videoRef.current && !videoRef.current.srcObject) {
+      initializeScanner(selectedCamera);
+    }
+  }, [isScanning, selectedCamera, initializeScanner]);
+
+  const startScanner = () => {
+    setError(null);
+    setScanResult(null);
+    setCapturedImage(null);
+    setIsScanning(true);
   };
 
   const handleCameraChange = async (newCameraId) => {
     setSelectedCamera(newCameraId);
 
     if (isScanning) {
-      stopScanner();
-      setTimeout(async () => {
-        try {
-          const stream = await getCameraStream(newCameraId);
-          if (videoRef.current) {
-            videoRef.current.srcObject = stream;
-            await videoRef.current.play();
-
-            controlsRef.current = await codeReaderRef.current.decodeFromVideoDevice(
-              undefined,
-              videoRef.current,
-              (result, error) => {
-                if (result) {
-                  setScanResult(result.getText());
-                  if (videoRef.current) {
-                    const canvas = document.createElement('canvas');
-                    canvas.width = videoRef.current.videoWidth;
-                    canvas.height = videoRef.current.videoHeight;
-                    const ctx = canvas.getContext('2d');
-                    ctx.drawImage(videoRef.current, 0, 0);
-                    setCapturedImage(canvas.toDataURL('image/png'));
-                  }
-                  if (scanMode === 'live') {
-                    stopScanner();
-                  }
-                }
-                if (error && !(error instanceof NotFoundException)) {
-                  console.error('[ZXing] Scan error:', error);
-                }
-              }
-            );
-
-            setIsScanning(true);
-            setTimeout(initializeCameraFeatures, 300);
-          }
-        } catch (err) {
-          console.error('[ZXing] Failed to switch camera:', err);
-          setError(`Failed to switch camera: ${err.message}`);
-        }
+      // Stop current stream but keep scanning state
+      stopAllTracks();
+      if (videoRef.current) {
+        videoRef.current.srcObject = null;
+      }
+      // Re-initialize with new camera
+      setTimeout(() => {
+        initializeScanner(newCameraId);
       }, 100);
     }
   };
