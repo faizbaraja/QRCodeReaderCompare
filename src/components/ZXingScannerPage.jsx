@@ -43,16 +43,26 @@ const ZXingScannerPage = () => {
   const getCameraStream = useCallback(async (preferredDeviceId) => {
     stopAllTracks();
 
+    // High resolution settings for better QR scanning
+    const hdConstraints = {
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+    };
+
     const constraintsList = [];
 
     if (preferredDeviceId && preferredDeviceId !== 'environment') {
       constraintsList.push(
+        { video: { deviceId: { exact: preferredDeviceId }, ...hdConstraints } },
+        { video: { deviceId: preferredDeviceId, ...hdConstraints } },
         { video: { deviceId: { exact: preferredDeviceId } } },
         { video: { deviceId: preferredDeviceId } }
       );
     }
 
     constraintsList.push(
+      { video: { facingMode: { exact: 'environment' }, ...hdConstraints } },
+      { video: { facingMode: 'environment', ...hdConstraints } },
       { video: { facingMode: { exact: 'environment' } } },
       { video: { facingMode: 'environment' } },
       { video: true }
@@ -82,6 +92,7 @@ const ZXingScannerPage = () => {
     if (track && typeof track.getSettings === 'function') {
       const settings = track.getSettings();
       console.log('[ZXing] Got camera:', settings.facingMode, settings.deviceId);
+      console.log('[ZXing] Resolution:', settings.width + 'x' + settings.height);
       setCurrentFacingMode(settings.facingMode || 'unknown');
     }
 
