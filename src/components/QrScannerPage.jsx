@@ -133,7 +133,19 @@ const QrScannerPage = () => {
         return !isFrontCamera;
       });
 
-      // Sort cameras to put the best QR scanning camera first
+      // Skip sorting/prioritization on iOS - camera labels are unreliable
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+      if (isIOS) {
+        // iOS: only filter out front cameras, no sorting
+        const camerasToUse = backCameras.length > 0 ? backCameras : availableCameras;
+        setCameras(camerasToUse);
+        setCamerasLoading(false);
+        return camerasToUse;
+      }
+
+      // Non-iOS: Sort cameras to put the best QR scanning camera first
       // Priority: main camera > others (exclude wide/ultra/telephoto/macro)
       const sortedBackCameras = [...backCameras].sort((a, b) => {
         const labelA = a.label.toLowerCase();
@@ -434,9 +446,9 @@ const QrScannerPage = () => {
         videoRef.current,
         (result) => {
           // Auto-zoom based on QR code size
-          if (result.cornerPoints && result.cornerPoints.length >= 4) {
-            applyAutoZoom(result.cornerPoints);
-          }
+          // if (result.cornerPoints && result.cornerPoints.length >= 4) {
+          //   applyAutoZoom(result.cornerPoints);
+          // }
 
           setScanResult(result.data);
           if (videoRef.current) {
