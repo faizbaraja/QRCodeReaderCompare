@@ -1,8 +1,8 @@
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
-import QRCodeScanner from './components/QRCodeScanner'
-import ZBarScanner from './components/ZBarScanner'
+// import QRCodeScanner from './components/QRCodeScanner'
+// import ZBarScanner from './components/ZBarScanner'
 import QrScannerPage from './components/QrScannerPage'
-import ZXingScannerPage from './components/ZXingScannerPage'
+// import ZXingScannerPage from './components/ZXingScannerPage'
 import './App.css'
 
 function Navigation() {
@@ -14,9 +14,9 @@ function Navigation() {
         to="/"
         className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
       >
-        Html5-QRCode
+        QR Scanner
       </Link>
-      <Link
+      {/* <Link
         to="/zbar"
         className={`nav-link ${location.pathname === '/zbar' ? 'active' : ''}`}
       >
@@ -33,7 +33,7 @@ function Navigation() {
         className={`nav-link ${location.pathname === '/zxing' ? 'active' : ''}`}
       >
         ZXing
-      </Link>
+      </Link> */}
     </nav>
   )
 }
@@ -44,10 +44,11 @@ function App() {
       <div className="app">
         <Navigation />
         <Routes>
-          <Route path="/" element={<QRCodeScanner />} />
+          <Route path="/" element={<QrScannerPage />} />
+          {/* <Route path="/" element={<QRCodeScanner />} />
           <Route path="/zbar" element={<ZBarScanner />} />
           <Route path="/qr-scanner" element={<QrScannerPage />} />
-          <Route path="/zxing" element={<ZXingScannerPage />} />
+          <Route path="/zxing" element={<ZXingScannerPage />} /> */}
         </Routes>
       </div>
     </BrowserRouter>

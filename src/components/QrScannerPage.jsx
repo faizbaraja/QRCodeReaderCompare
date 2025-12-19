@@ -7,7 +7,7 @@ const QrScannerPage = () => {
   const [error, setError] = useState(null);
   const [scanMode, setScanMode] = useState('live');
   const [capturedImage, setCapturedImage] = useState(null);
-  const [zoomLevel, setZoomLevel] = useState(2);
+  const [zoomLevel, setZoomLevel] = useState(1.8);
   const [zoomSupported, setZoomSupported] = useState(false);
   const [zoomRange, setZoomRange] = useState({ min: 1, max: 1 });
   const [cameras, setCameras] = useState([]);
@@ -16,6 +16,7 @@ const QrScannerPage = () => {
   const [currentFacingMode, setCurrentFacingMode] = useState(null);
   const [autoZoomEnabled, setAutoZoomEnabled] = useState(true);
   const [focusPoint, setFocusPoint] = useState(null);
+  const [cameraReady, setCameraReady] = useState(false);
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
   const streamRef = useRef(null);
@@ -146,6 +147,8 @@ const QrScannerPage = () => {
           label.includes('tele') ||
           label.includes('macro') ||
           label.includes('depth') ||
+          label.includes('camera 2') ||
+          label.includes('camera 1') ||
           label.includes('zoom');
 
         const aIsSpecial = isSpecialCamera(labelA);
@@ -156,8 +159,8 @@ const QrScannerPage = () => {
         if (!aIsSpecial && bIsSpecial) return -1;
 
         // If both are same type, prefer ones with "main" or "back" in name
-        const aIsMain = labelA.includes('main') || labelA.includes('back 0') || labelA.includes('rear 0');
-        const bIsMain = labelB.includes('main') || labelB.includes('back 0') || labelB.includes('rear 0');
+        const aIsMain = labelA.includes('main') || labelA.includes('back 0') || labelA.includes('rear 0') || labelA.includes('camera 0');
+        const bIsMain = labelB.includes('main') || labelB.includes('back 0') || labelB.includes('rear 0') || labelB.includes('camera 0');
 
         if (aIsMain && !bIsMain) return -1;
         if (!aIsMain && bIsMain) return 1;
@@ -200,9 +203,10 @@ const QrScannerPage = () => {
     }
     stopAllTracks();
     setIsScanning(false);
-    setZoomLevel(2);
+    setZoomLevel(1.8);
     setZoomSupported(false);
     setCurrentFacingMode(null);
+    setCameraReady(false);
   }, [stopAllTracks]);
 
   useEffect(() => {
@@ -251,7 +255,7 @@ const QrScannerPage = () => {
       setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
 
       // Set default zoom to 2x for better QR scanning
-      const defaultZoom = Math.min(2, capabilities.zoom.max);
+      const defaultZoom = Math.min(1.8, capabilities.zoom.max);
       setZoomLevel(defaultZoom);
 
       try {
@@ -261,6 +265,9 @@ const QrScannerPage = () => {
         console.log('[QR Scanner] Failed to apply default zoom:', err);
       }
     }
+
+    // Camera is ready - show the video
+    setCameraReady(true);
   }, []);
 
   // Auto-zoom function - detects small QR codes and zooms in
@@ -399,6 +406,29 @@ const QrScannerPage = () => {
         return;
       }
 
+      // Detect iOS device
+      const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+        (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+      // Determine preferred camera
+      let preferredCameraId;
+      if (isIOS) {
+        // iOS: always use 'environment' for reliable back camera selection
+        preferredCameraId = 'environment';
+        console.log('[QR Scanner] iOS detected, using environment mode');
+      } else if (cameraId && cameraId !== 'environment') {
+        // Non-iOS with specific camera selected: use that camera
+        preferredCameraId = cameraId;
+      } else {
+        // Non-iOS with auto mode: detect "camera 0" if available, otherwise 'environment'
+        preferredCameraId = 'environment';
+        const camera0 = cameras.find(cam => cam.label.toLowerCase().includes('camera 0'));
+        if (camera0) {
+          preferredCameraId = camera0.id;
+          console.log('[QR Scanner] Auto-detected camera 0:', camera0.label);
+        }
+      }
+
       // Let qr-scanner library handle the camera
       scannerRef.current = new QrScanner(
         videoRef.current,
@@ -425,7 +455,7 @@ const QrScannerPage = () => {
           returnDetailedScanResult: true,
           highlightScanRegion: true,
           highlightCodeOutline: true,
-          preferredCamera: cameraId || 'environment',
+          preferredCamera: preferredCameraId,
         }
       );
 
@@ -449,7 +479,7 @@ const QrScannerPage = () => {
       setError(`Failed to start scanner: ${err.message}`);
       setIsScanning(false);
     }
-  }, [scanMode, stopScanner, applyAutoZoom, initializeCameraFeatures]);
+  }, [scanMode, stopScanner, applyAutoZoom, initializeCameraFeatures, cameras]);
 
   // Effect to initialize scanner when isScanning becomes true
   useEffect(() => {
@@ -627,9 +657,23 @@ const QrScannerPage = () => {
           <video
             ref={videoRef}
             className="zxing-video"
+            style={{ opacity: cameraReady ? 1 : 0, transition: 'opacity 0.2s ease-in' }}
             playsInline
             muted
           />
+          {/* Loading indicator while camera initializes */}
+          {!cameraReady && (
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              color: 'white',
+              fontSize: '16px'
+            }}>
+              Initializing camera...
+            </div>
+          )}
           {/* Tap-to-focus indicator */}
           {focusPoint && (
             <div
