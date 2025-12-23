@@ -7,9 +7,10 @@ const QrScannerPage = () => {
   const [error, setError] = useState(null);
   const [scanMode, setScanMode] = useState('live');
   const [capturedImage, setCapturedImage] = useState(null);
-  const [zoomLevel, setZoomLevel] = useState(1);
+  const [zoomLevel, setZoomLevel] = useState(2);
   const [zoomSupported, setZoomSupported] = useState(false);
   const [zoomRange, setZoomRange] = useState({ min: 1, max: 1 });
+  const [videoReady, setVideoReady] = useState(false);
   const videoRef = useRef(null);
   const scannerRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -21,8 +22,9 @@ const QrScannerPage = () => {
       scannerRef.current = null;
     }
     setIsScanning(false);
-    setZoomLevel(1);
+    setZoomLevel(2);
     setZoomSupported(false);
+    setVideoReady(false);
   }, []);
 
   useEffect(() => {
@@ -65,13 +67,36 @@ const QrScannerPage = () => {
           highlightScanRegion: true,
           highlightCodeOutline: true,
           preferredCamera: 'environment',
+          maxScansPerSecond: 30,
+          calculateScanRegion: (video) => {
+            const smallestDimension = Math.min(video.videoWidth, video.videoHeight);
+            const scanRegionSize = Math.round(smallestDimension * 0.7);
+            return {
+              x: Math.round((video.videoWidth - scanRegionSize) / 2),
+              y: Math.round((video.videoHeight - scanRegionSize) / 2),
+              width: scanRegionSize,
+              height: scanRegionSize,
+              downScaledWidth: 500,
+              downScaledHeight: 500,
+            };
+          },
         }
       );
 
-      await scannerRef.current.start();
+      await scannerRef.current.start({
+        video: {
+        facingMode: { ideal: "environment" },
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          frameRate: { ideal: 30 }
+        }
+      });
       setIsScanning(true);
 
-      // Check zoom capability after a short delay
+      // Enable scanning of both normal and inverted QR codes
+      scannerRef.current.setInversionMode('both');
+
+      // Apply zoom immediately, then show video
       setTimeout(async () => {
         if (videoRef.current && videoRef.current.srcObject) {
           const stream = videoRef.current.srcObject;
@@ -81,7 +106,7 @@ const QrScannerPage = () => {
             if (capabilities && capabilities.zoom) {
               setZoomSupported(true);
               setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
-              // Set default zoom to 2x (or max if less than 2)
+              // Set default zoom to 2x
               const defaultZoom = Math.min(2, capabilities.zoom.max);
               setZoomLevel(defaultZoom);
               try {
@@ -92,7 +117,9 @@ const QrScannerPage = () => {
             }
           }
         }
-      }, 500);
+        // Show video after zoom is applied
+        setVideoReady(true);
+      }, 100);
     } catch (err) {
       setError(`Failed to start scanner: ${err.message}`);
       setIsScanning(false);
@@ -222,7 +249,9 @@ const QrScannerPage = () => {
               width: '100%',
               height: '100%',
               objectFit: 'cover',
-              borderRadius: '8px'
+              borderRadius: '8px',
+              opacity: videoReady ? 1 : 0,
+              transition: 'opacity 0.3s ease-in-out'
             }}
             playsInline
             muted
