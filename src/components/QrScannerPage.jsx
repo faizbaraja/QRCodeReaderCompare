@@ -112,7 +112,7 @@ const QrScannerPage = () => {
               try {
                 await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
               } catch (err) {
-                console.log('Failed to apply default zoom:', err);
+                console.log('Failed to apply default zoomyes:', err);
               }
             }
           }
