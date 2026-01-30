@@ -1,0 +1,19 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appID": "266JCFZD4L.com.usetada.app.release.kitkatwlastaging",
+        "paths": [
+          "kitkat"
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "266JCFZD4L.com.usetada.app.release.kitkatwlastaging",
+      "54SVVWQV48.id.co.giftcard.app.holdr.staging"
+    ]
+  }
+}

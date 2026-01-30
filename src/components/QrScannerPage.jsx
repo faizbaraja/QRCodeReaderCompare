@@ -44,6 +44,25 @@ const QrScannerPage = () => {
         return;
       }
 
+      // Find preferred camera - look for "camera 0" on Android devices with multiple back cameras
+      let preferredCameraId = null;
+      try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(d => d.kind === 'videoinput');
+
+        // Look for back camera with "camera 0" in the label (main camera on Android)
+        const camera0 = videoDevices.find(d =>
+          d.label.toLowerCase().includes('back') &&
+          d.label.toLowerCase().includes('camera 0')
+        );
+
+        if (camera0) {
+          preferredCameraId = camera0.deviceId;
+        }
+      } catch (err) {
+        console.log('Could not enumerate devices:', err);
+      }
+
       scannerRef.current = new QrScanner(
         videoRef.current,
         (result) => {
@@ -66,7 +85,7 @@ const QrScannerPage = () => {
           returnDetailedScanResult: true,
           highlightScanRegion: true,
           highlightCodeOutline: true,
-          preferredCamera: 'environment',
+          preferredCamera: preferredCameraId || 'environment',
           maxScansPerSecond: 30,
           calculateScanRegion: (video) => {
             const smallestDimension = Math.min(video.videoWidth, video.videoHeight);
@@ -83,41 +102,60 @@ const QrScannerPage = () => {
         }
       );
 
-      await scannerRef.current.start({
-        video: {
-        facingMode: { ideal: "environment" },
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-          frameRate: { ideal: 30 }
-        }
-      });
+      // Build video constraints
+      const videoConstraints = {
+        width: { ideal: 1280 },
+        height: { ideal: 720 },
+        frameRate: { ideal: 30 }
+      };
+
+      if (preferredCameraId) {
+        videoConstraints.deviceId = { exact: preferredCameraId };
+      } else {
+        videoConstraints.facingMode = { ideal: "environment" };
+      }
+
+      await scannerRef.current.start({ video: videoConstraints });
       setIsScanning(true);
 
       // Enable scanning of both normal and inverted QR codes
       scannerRef.current.setInversionMode('both');
 
-      // Apply zoom immediately, then show video
+      // Apply camera settings (autofocus, zoom), then show video
       setTimeout(async () => {
         if (videoRef.current && videoRef.current.srcObject) {
           const stream = videoRef.current.srcObject;
           const track = stream.getVideoTracks()[0];
           if (track && typeof track.getCapabilities === 'function') {
             const capabilities = track.getCapabilities();
-            if (capabilities && capabilities.zoom) {
+            const constraintsToApply = [];
+
+            // Enable continuous autofocus if supported
+            // if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+            //   constraintsToApply.push({ focusMode: 'continuous' });
+            // }
+
+            // Set up zoom if supported
+            if (capabilities.zoom) {
               setZoomSupported(true);
               setZoomRange({ min: capabilities.zoom.min, max: capabilities.zoom.max });
               // Set default zoom to 2x
               const defaultZoom = Math.min(2, capabilities.zoom.max);
               setZoomLevel(defaultZoom);
+              constraintsToApply.push({ zoom: defaultZoom });
+            }
+
+            // Apply all constraints
+            if (constraintsToApply.length > 0) {
               try {
-                await track.applyConstraints({ advanced: [{ zoom: defaultZoom }] });
+                await track.applyConstraints({ advanced: constraintsToApply });
               } catch (err) {
-                console.log('Failed to apply default zoomyes:', err);
+                console.log('Failed to apply camera constraints:', err);
               }
             }
           }
         }
-        // Show video after zoom is applied
+        // Show video after settings are applied
         setVideoReady(true);
       }, 100);
     } catch (err) {

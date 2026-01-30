@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { Html5Qrcode } from 'html5-qrcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
+
+// Supported formats: QR Code and Code 128 barcode
+const FORMATS_TO_SUPPORT = [
+  Html5QrcodeSupportedFormats.QR_CODE,
+  Html5QrcodeSupportedFormats.CODE_128,
+];
 
 const QRCodeScanner = () => {
   const [scanResult, setScanResult] = useState(null);
@@ -26,13 +32,19 @@ const QRCodeScanner = () => {
       setScanResult(null);
       setCapturedImage(null);
 
-      if (!html5QrCodeRef.current) {
-        html5QrCodeRef.current = new Html5Qrcode('qr-reader');
+      // Clear previous instance and create new one with barcode support
+      if (html5QrCodeRef.current) {
+        try {
+          await html5QrCodeRef.current.clear();
+        } catch (e) {
+          // Ignore clear errors
+        }
       }
+      html5QrCodeRef.current = new Html5Qrcode('qr-reader', { formatsToSupport: FORMATS_TO_SUPPORT });
 
       const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 250 },
+        fps: 15,
+        qrbox: { width: 300, height: 100 },
         aspectRatio: 1.0,
       };
 
@@ -154,7 +166,7 @@ const QRCodeScanner = () => {
             setScanResult(result);
             setError(null);
           } catch (err) {
-            setError('No QR code found in the captured image');
+            setError('No QR code or barcode found in the captured image');
             setScanResult(null);
           }
         }
@@ -176,14 +188,13 @@ const QRCodeScanner = () => {
       const imageUrl = URL.createObjectURL(file);
       setCapturedImage(imageUrl);
 
-      if (!html5QrCodeRef.current) {
-        html5QrCodeRef.current = new Html5Qrcode('qr-reader-hidden');
-      }
-
-      const result = await html5QrCodeRef.current.scanFile(file, true);
+      // Create scanner with barcode support for file scanning
+      const fileScanner = new Html5Qrcode('qr-reader-hidden', { formatsToSupport: FORMATS_TO_SUPPORT });
+      const result = await fileScanner.scanFile(file, true);
+      await fileScanner.clear();
       setScanResult(result);
     } catch (err) {
-      setError('No QR code found in the uploaded image');
+      setError('No QR code or barcode found in the uploaded image');
       setScanResult(null);
     }
   };
@@ -199,7 +210,7 @@ const QRCodeScanner = () => {
 
   return (
     <div className="qr-scanner-container">
-      <h1>QR Code Scanner</h1>
+      <h1>QR & Barcode Scanner</h1>
 
       <div className="mode-selector">
         <button

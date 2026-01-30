@@ -84,11 +84,10 @@
   color: white;
 }
 
-/* Scanner Area - Square */
+/* Scanner Area - Full Screen */
 .scanner-area {
   width: 100%;
-  max-width: 280px;
-  aspect-ratio: 1;
+  height: 70vh;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -476,7 +475,7 @@
   }
 
   .scanner-area {
-    max-width: 240px;
+    height: 60vh;
   }
 
   .mode-btn {

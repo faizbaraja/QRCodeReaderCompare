@@ -1,0 +1,258 @@
+.geocoding-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20px;
+  width: 100%;
+  padding: 12px;
+}
+
+.geocoding-container h1 {
+  margin: 0;
+  font-size: 1.5rem;
+  text-align: center;
+}
+
+.input-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.input-group label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: #888;
+}
+
+.input-group input,
+.input-group textarea {
+  padding: 10px 14px;
+  border: 2px solid #3a3a3a;
+  border-radius: 8px;
+  background: #1a1a1a;
+  color: #fff;
+  font-size: 0.9rem;
+  transition: border-color 0.2s ease;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.input-group input:focus,
+.input-group textarea:focus {
+  outline: none;
+  border-color: #646cff;
+}
+
+.input-group input::placeholder,
+.input-group textarea::placeholder {
+  color: #666;
+}
+
+.geocode-btn {
+  padding: 12px 20px;
+  background: #646cff;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-top: 8px;
+}
+
+.geocode-btn:hover:not(:disabled) {
+  background: #535bf2;
+}
+
+.geocode-btn:disabled {
+  background: #4a4a4a;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.error-box {
+  padding: 12px 16px;
+  background: #fef2f2;
+  border: 2px solid #ef4444;
+  border-radius: 8px;
+  color: #dc2626;
+  width: 100%;
+  max-width: 400px;
+  font-size: 0.9rem;
+}
+
+.response-section {
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.response-section h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  text-align: center;
+}
+
+.response-content {
+  background: #1a1a1a;
+  border: 2px solid #646cff;
+  border-radius: 10px;
+  padding: 16px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.response-content pre {
+  margin: 0;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: #e5e5e5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Light mode */
+@media (prefers-color-scheme: light) {
+  .input-group label {
+    color: #4b5563;
+  }
+
+  .input-group input {
+    background: #f9f9f9;
+    border-color: #e5e7eb;
+    color: #213547;
+  }
+
+  .input-group input:focus {
+    border-color: #646cff;
+  }
+
+  .response-content {
+    background: #f9f9f9;
+    border-color: #646cff;
+  }
+
+  .response-content pre {
+    color: #213547;
+  }
+}
+
+/* Mobile responsive */
+@media (max-width: 400px) {
+  .geocoding-container {
+    padding: 8px;
+  }
+
+  .geocoding-container h1 {
+    font-size: 1.2rem;
+  }
+
+  .input-section {
+    max-width: 100%;
+  }
+
+  .geocode-btn {
+    padding: 10px 16px;
+    font-size: 0.95rem;
+  }
+
+  .response-section {
+    max-width: 100%;
+  }
+
+  .response-content {
+    padding: 12px;
+  }
+
+  .response-content pre {
+    font-size: 0.8rem;
+  }
+}
+
+/* User Agent Info */
+.ua-info {
+  width: 100%;
+  max-width: 600px;
+  background: #1a1a1a;
+  border: 2px solid #646cff;
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ua-info h3 {
+  margin: 0;
+  font-size: 1.1rem;
+  color: #646cff;
+}
+
+.ua-detail {
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+.ua-detail strong {
+  color: #888;
+  display: block;
+  margin-bottom: 4px;
+}
+
+.ua-detail.changed {
+  color: #22c55e;
+}
+
+.ua-detail.no-change {
+  color: #fbbf24;
+}
+
+.ua-value {
+  background: #0a0a0a;
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8rem;
+  word-break: break-all;
+  margin-top: 4px;
+  color: #e5e5e5;
+}
+
+/* Light mode for UA info */
+@media (prefers-color-scheme: light) {
+  .input-group input,
+  .input-group textarea {
+    background: #f9f9f9;
+    border-color: #e5e7eb;
+    color: #213547;
+  }
+
+  .input-group input:focus,
+  .input-group textarea:focus {
+    border-color: #646cff;
+  }
+
+  .ua-info {
+    background: #f9f9f9;
+    border-color: #646cff;
+  }
+
+  .ua-value {
+    background: #ffffff;
+    color: #213547;
+    border: 1px solid #e5e7eb;
+  }
+}

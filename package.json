@@ -5,13 +5,17 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "server": "node server.js",
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview"
   },
   "dependencies": {
     "@undecaf/zbar-wasm": "^0.11.0",
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
     "html5-qrcode": "^2.3.8",
+    "node-fetch": "^3.3.2",
     "qr-scanner": "^1.4.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

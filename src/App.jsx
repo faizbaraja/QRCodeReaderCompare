@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
 import QRCodeScanner from './components/QRCodeScanner'
-import ZBarScanner from './components/ZBarScanner'
 import QrScannerPage from './components/QrScannerPage'
+import ReverseGeocoding from './components/ReverseGeocoding'
 import './App.css'
 
 function Navigation() {
@@ -13,19 +13,19 @@ function Navigation() {
         to="/"
         className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}
       >
+        QR Scanner
+      </Link>
+      <Link
+        to="/html5"
+        className={`nav-link ${location.pathname === '/html5' ? 'active' : ''}`}
+      >
         Html5-QRCode
       </Link>
       <Link
-        to="/zbar"
-        className={`nav-link ${location.pathname === '/zbar' ? 'active' : ''}`}
+        to="/geocoding"
+        className={`nav-link ${location.pathname === '/geocoding' ? 'active' : ''}`}
       >
-        ZBar WASM
-      </Link>
-      <Link
-        to="/qr-scanner"
-        className={`nav-link ${location.pathname === '/qr-scanner' ? 'active' : ''}`}
-      >
-        QR Scanner
+        Reverse Geocoding
       </Link>
     </nav>
   )
@@ -37,9 +37,9 @@ function App() {
       <div className="app">
         <Navigation />
         <Routes>
-          <Route path="/" element={<QRCodeScanner />} />
-          <Route path="/zbar" element={<ZBarScanner />} />
-          <Route path="/qr-scanner" element={<QrScannerPage />} />
+          <Route path="/" element={<QrScannerPage />} />
+          <Route path="/html5" element={<QRCodeScanner />} />
+          <Route path="/geocoding" element={<ReverseGeocoding />} />
         </Routes>
       </div>
     </BrowserRouter>
