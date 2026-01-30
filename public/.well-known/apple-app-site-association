@@ -5,7 +5,7 @@
       {
         "appID": "266JCFZD4L.com.usetada.app.release.kitkatwlastaging",
         "paths": [
-          "kitkat"
+          "fallback/kitkat"
         ]
       }
     ]
